@@ -31,6 +31,7 @@ import {
   searchTextFrom,
   titleFromPreview,
   uniqSorted,
+  orderByNativeId,
   walkFiles,
 } from "./util.ts";
 
@@ -83,8 +84,7 @@ export class CodexAdapter implements SessionAdapter {
   }
 
   async getSession(nativeId: string): Promise<SessionDetail | null> {
-    for (const file of this.files()) {
-      if (!file.includes(nativeId)) continue;
+    for (const file of orderByNativeId(this.files(), nativeId)) {
       const parsed = this.parse(file, true);
       if (!parsed) continue;
       return {

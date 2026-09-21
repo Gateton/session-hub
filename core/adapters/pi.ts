@@ -15,6 +15,7 @@ import type {
 import { emptyFidelity } from "../types.ts";
 import type { NativeResumeAction, SessionAdapter } from "./types.ts";
 import {
+  orderByNativeId,
   addSearchText,
   contentToText,
   countTools,
@@ -99,8 +100,7 @@ export class PiAdapter implements SessionAdapter {
   }
 
   async getSession(nativeId: string): Promise<SessionDetail | null> {
-    for (const file of this.files()) {
-      if (!file.includes(nativeId)) continue;
+    for (const file of orderByNativeId(this.files(), nativeId)) {
       const parsed = this.parse(file, true);
       if (!parsed) continue;
       return {
@@ -114,8 +114,7 @@ export class PiAdapter implements SessionAdapter {
   }
 
   async buildNativeResume(nativeId: string): Promise<NativeResumeAction | null> {
-    for (const file of this.files()) {
-      if (!file.includes(nativeId)) continue;
+    for (const file of orderByNativeId(this.files(), nativeId)) {
       return {
         command: "pi",
         args: ["--session", file],

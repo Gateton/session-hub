@@ -37,6 +37,7 @@ import {
   searchTextFrom,
   titleFromPreview,
   uniqSorted,
+  orderByNativeId,
   walkFiles,
 } from "./util.ts";
 
@@ -103,8 +104,7 @@ export class ClaudeCodeAdapter implements SessionAdapter {
   }
 
   async getSession(nativeId: string): Promise<SessionDetail | null> {
-    for (const file of this.files()) {
-      if (!file.includes(nativeId)) continue;
+    for (const file of orderByNativeId(this.files(), nativeId, isSubagentPath)) {
       const parsed = this.parse(file, true);
       if (!parsed) continue;
       return {
@@ -121,8 +121,8 @@ export class ClaudeCodeAdapter implements SessionAdapter {
     // `claude --resume <id>` only accepts top-level session ids. Subagent
     // transcripts have ids that the CLI will not resolve, so we refuse rather
     // than hand the user a command that fails.
-    const file = this.files().find((f) => f.includes(nativeId));
-    if (file && isSubagentPath(file)) return null;
+    const file = orderByNativeId(this.files(), nativeId, isSubagentPath)[0];
+    if (!file || isSubagentPath(file)) return null;
     return {
       command: "claude",
       args: ["--resume", nativeId],

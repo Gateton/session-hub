@@ -326,6 +326,43 @@ if (target) {
   check("a session with messages exists", false, "no sessions on this machine");
 }
 
+process.stdout.write("\n3b. a session loads its own transcript, not a nested one\n");
+// A Claude Code subagent transcript lives inside its parent's directory, so its
+// path contains the parent's id. Asking for the parent must never return the
+// subagent's transcript: that would silently load the wrong conversation.
+const resolvedClaude = (list.data ?? []).filter((s) => s.harness === "claude-code");
+const parents = resolvedClaude.filter((s) => !s.path.includes("/subagents/"));
+const subagents = resolvedClaude.filter((s) => s.path.includes("/subagents/"));
+if (parents.length > 0) {
+  const parent = parents[0];
+  const ctx = runJson(["context", parent.uid, "--chars", "2000"], { env });
+  check(
+    "asking for a parent session returns the parent's own file",
+    ctx.data?.source === parent.path,
+    `${ctx.data?.source} !== ${parent.path}`,
+  );
+  check("the parent's file is not a subagent transcript", !String(ctx.data?.source ?? "").includes("/subagents/"));
+}
+if (subagents.length > 0) {
+  const sub = subagents[0];
+  const ctx = runJson(["context", sub.uid, "--chars", "2000"], { env });
+  check(
+    "asking for a subagent transcript returns that subagent",
+    String(ctx.data?.source ?? "").includes("/subagents/"),
+    String(ctx.data?.source ?? ""),
+  );
+  const native = runJson(["native", sub.uid], { env });
+  check("a subagent transcript has no resume command", native.data?.action === null, JSON.stringify(native.data?.action ?? null));
+}
+for (const session of [...parents.slice(0, 3), ...subagents.slice(0, 3)]) {
+  const ctx = runJson(["context", session.uid, "--chars", "2000"], { env });
+  check(
+    `uid ${session.uid.slice(0, 24)} resolves to its own path`,
+    ctx.data?.source === session.path,
+    `${ctx.data?.source} !== ${session.path}`,
+  );
+}
+
 process.stdout.write("\n4. the explicit pick and delivery flow\n");
 if (target) {
   const pick = runJson(["pick", target.uid, "--chars", "3000"], { env });

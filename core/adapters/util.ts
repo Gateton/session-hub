@@ -356,3 +356,26 @@ export function pushCommand(list: string[], command: string | null, max = 25): v
   if (list.includes(command)) return;
   list.push(command);
 }
+
+/**
+ * Order candidate files for a session lookup.
+ *
+ * A native id is not always enough to identify a file by substring: a Claude Code
+ * subagent transcript lives under its parent session's directory, so
+ * `<parent-uuid>/subagents/agent-xxx.jsonl` contains the parent's id and would
+ * win a naive `includes` scan, silently returning the subagent's transcript for
+ * the parent session. Exact basename matches come first, then non-subagent
+ * paths, then everything else, so the most specific match wins.
+ */
+export function orderByNativeId(files: string[], nativeId: string, isNested?: (file: string) => boolean): string[] {
+  const base = (file: string): string => {
+    const name = path.basename(file);
+    const dot = name.lastIndexOf(".");
+    return dot > 0 ? name.slice(0, dot) : name;
+  };
+  const matching = files.filter((file) => file.includes(nativeId));
+  const exact = matching.filter((file) => base(file) === nativeId);
+  const top = isNested ? matching.filter((file) => !isNested(file)) : matching;
+  const nested = isNested ? matching.filter(isNested) : [];
+  return [...new Set([...exact, ...top, ...nested, ...matching])];
+}
