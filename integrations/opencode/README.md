@@ -90,13 +90,21 @@ That needs the root export map listed at the bottom of this file.
 
 | Keys | Where it works |
 | --- | --- |
+| `ctrl+shift+h` | the default; terminals that report shifted keys (kitty keyboard protocol) |
 | `alt+h` | everywhere, including terminals that do not report shifted keys |
-| `ctrl+shift+h` | terminals that do (kitty keyboard protocol) |
 
 Both open the browser. `ctrl+shift+h` is the nicer one when your terminal can
 send it; `alt+h` is the one that always works, because a terminal that cannot
 report `shift` turns `ctrl+shift+h` into a plain `ctrl+h`, which OpenCode has no
-binding for. Neither key is used by OpenCode's own defaults.
+binding for. Neither key is used by OpenCode's own defaults, and both are
+registered even when you change the first one:
+
+```bash
+export SESSION_HUB_KEYBIND="ctrl+shift+s"   # the key that opens the browser
+```
+
+`alt+h` is not configurable on purpose: it is the fallback that cannot be typed
+wrong by a terminal.
 
 The browser is also reachable from the command palette (`ctrl+p`) as
 **session-hub: browse sessions from your other agents**, and there is a second
@@ -104,39 +112,115 @@ palette entry, **session-hub: what is waiting to be imported**.
 
 ### The browser
 
+One list of every agent's sessions, a preview of what would be imported, and the
+keys in the footer. This is a real capture, 110 columns wide, 50 sessions from 8
+projects across all six harnesses:
+
 ```
- session-hub
- 12 session(s) for this project, newest first
-
- ▸ jcode:session_turkey_1790003705265_57c611274d4b11e1
-     JCode · 2m ago · 449 messages · /home/gateton
-     que tan factible es hacer esta misma extension pero para claude code?
-   codex:01a0c4cd-79e2-7123-8c68-f1b2e447ba98
-     Codex · 8m ago · 5 messages · /home/gateton
-     que fue lo ultimo que hable con jcode?
-
- ─────────────────────────────────────────────────────────
- importing 19/77 message(s) · ~1,560 tokens (6,241 characters) · nothing sent yet
- # Imported Session Context
- - Source harness: JCode
- ...
-
- up/down move · enter import · / filter · r reload · esc back
+ session-hub  50 of 50 shown · 8 project(s)
+ this project, newest first
+  1 π Pi   2 ✻ Claude Code   3 ⬡ Codex   4 ⌘ OpenCode   5 ❯ Crush   6 ◆ JCode  0 all (showing)
+ ┌─ sessions ─────────────────────────────────────│── preview ──────────────────────────────────────────────┐
+ │ ▌◆ 4m ago     55 msg · /home/gateton           │ ◆ JCode · deepseek-v4.1-flash · 55 message(s)           │
+ │ ▌ Produce a real screenshot of session-hub's…  │ jcode:session_owl_1790014229626_f5f92397162df328        │
+ │  ◆ 24m ago   165 msg · /home/gateton           │ /home/gateton · last activity 4m ago                    │
+ │   Improve the OpenCode TUI browser of `sessi…  │ 4/4 msgs · ~1,810 tokens · nothing sent yet             │
+ │  ⌘ 41m ago     2 msg · /home/gateton           │ ──────────────────────────────────────────────────────  │
+ │   Pruebas de session-hub en Codex y OpenCode   │ # Imported Session Context                              │
+ │  ⬡ 1h ago      4 msg · /home/gateton/Projects… │ - Source harness: JCode                                 │
+ │   # AGENTS.md instructions for /home/gateton…  │ - Source session ID: session_owl_1790014229626_f5f923…  │
+ └────────────────────────────────────────────────│─────────────────────────────────────────────────────────┘
+ ↑↓ move · tab preview · enter import · / search · 1-6 harness · 0 all · r reload · esc back
+ open again from anywhere: ctrl+shift+h · alt+h · ctrl+p → session-hub, browse sessions from your other agen…
 ```
 
-| Key | What it does |
+Two panes above 90 columns, one pane below it: under 90 the preview moves
+underneath the list, because a row needs about 46 columns and so does the
+preview. 80x24 is a supported size, not an accident.
+
+#### Keys
+
+| Key | Pane | What it does |
+| --- | --- | --- |
+| `1` … `6` | list | show only that harness (the table below says which is which); the same key again clears it |
+| `0` | list | show every harness |
+| `up` / `down`, `k` / `j` | list | move the selection; the preview follows |
+| `up` / `down`, `k` / `j` | preview | scroll the package the preview is showing |
+| `pageup` / `pagedown` | either | five sessions, or a page of the preview |
+| `home` / `end` | list | first / last session |
+| `tab` | either | move the focus between the list and the preview |
+| `/` | list | put the keyboard in the filter box |
+| `←` `→` `backspace` `delete` `home` `end` `ctrl+u` | filter box | edit the words |
+| `enter` | filter box | keep the words and hand the keyboard back to the list |
+| `esc` | filter box | clear the words; a second `esc` closes the browser |
+| `esc` | list | clear the filter, or close the browser when there are no words |
+| `enter` | either | ask to import the selected session, then confirm |
+| `r` | list | re-read the hub index |
+
+#### Harness markers and colours
+
+| Key | Marker | ASCII | Harness | Theme token | Why that colour |
+| --- | --- | --- | --- | --- | --- |
+| `1` | `π` | `P` | Pi | `success` | the harness this hub ships with; green for "yours" |
+| `2` | `✻` | `C` | Claude Code | `warning` | Anthropic's own amber, the colour Claude Code wears |
+| `3` | `⬡` | `X` | Codex | `info` | cool blue: Codex's own chrome, and its calm register |
+| `4` | `⌘` | `O` | OpenCode | `accent` | you are inside OpenCode; `accent` is the host's "the thing you are looking at" token |
+| `5` | `❯` | `R` | Crush | `secondary` | the contrasting hue in this theme, Crush's family |
+| `6` | `◆` | `J` | JCode | `primary` | the theme's headline colour, for the other terminal-first agent |
+
+Six harnesses, six different hues, on purpose: a two-line row has room for one
+colour and it has to say *which agent* before the label is read. `error`,
+`text`, `textMuted` and the three border tokens are deliberately not used for
+harness identity, so a red line in this browser always means a failure and never
+"that one is Crush". The rest of the palette:
+
+| What | Token |
 | --- | --- |
-| `up` / `down`, `k` / `j` | move the selection; the preview follows |
-| `pageup` / `pagedown` | move five at a time |
-| `enter` | ask to import the selected session, then confirm |
-| `/` | filter: words to search every transcript, empty for this project |
-| `r` | re-read the hub index |
-| `escape` | back to your session |
+| the selected row | a `backgroundElement` block plus an `accent` bar on both of its lines |
+| the focused pane's border, the caret in the filter box, `0 all` when no filter is on | `borderActive` / `accent` |
+| the other pane's border, the rules and the "lines x-y of n" footer | `borderSubtle` |
+| metadata: age, message count, project, uid, model | `textMuted` |
+| a title, and the cost line | `text` |
+| a hub call that failed, and a read-only index | `warning` |
+
+A selected row keeps the foregrounds it has when it is not selected: the
+selection is the background and the bar. `selectedListItemText` is the host's own
+token for text on *its* selection background, and on this row's `backgroundElement`
+it reads washed out next to the other rows.
+
+Terminals without symbol coverage (no `π`, `✻`, `⬡`, `⌘`, `❯`, `◆`) get plain
+letters instead, with the same colours and the same keys:
+
+```bash
+export SESSION_HUB_ASCII=1        # or PI_SESSION_HUB_ASCII=1, the older name
+```
+
+#### What the filter box searches
+
+The box filters the rows already loaded, which makes it instant and free: title,
+preview, project, model, uid and harness name, case-insensitively. If nothing
+matches locally and you have typed three characters or more, the browser also
+asks the hub to search every transcript on disk (after a 450 ms pause) and says
+so in the header: `transcript search: 3 hit(s) over every project`. That path
+reads the index; it never touches a model.
+
+When there is nothing to show, the list says so and names the way out:
+`nothing matches "foo"`, plus the reminder that `/hub foo` searches full
+transcripts server-side. With a harness filter on it also says `press 0 to drop
+the harness filter`.
+
+#### The header
+
+`50 of 50 shown · 8 project(s)` is what is on screen out of what is loaded, and
+how many distinct projects those sessions come from. If the hub index cannot be
+written in this environment, one more line appears: the results are real but they
+are the last scan, not a fresh one. `r` re-reads the index; if that fails, the
+failure is shown with the fix, and recorded in the log below.
 
 The list and the preview cost nothing: the hub reads transcripts straight off
-disk, no model is involved. The preview shows the head of the exact package that
-would be imported, at the budget that will be used, so the number you see is the
-number you pay.
+disk, no model is involved. The preview shows the metadata (harness, model, uid,
+project, last activity), the cost of the import in messages and tokens, the head
+of the exact package that would be imported, and the words `nothing sent yet`.
 
 Confirming calls `sessionhub pick`. The record is written to
 `~/.session-hub/pending.json` and a toast says it will arrive with your next
@@ -322,13 +406,26 @@ Observed, not assumed. OpenCode 1.18.30, plugin running on Bun 1.3.14.
 - **Delivery is exactly once.** With a pick recorded, the next message carried the
   block (`Source: <uid>` present in the persisted part); the message after it was
   clean.
-- **The browser renders and works.** Driven through a real pty with a terminal
-  emulator: the keybind opened the route, which listed 25 real sessions from all
-  six harnesses with harness, age, message count and repo; moving the selection
-  updated the preview (the cost line and the head of the package that would be
-  imported); `enter` raised the confirmation dialog with the measured cost; the
-  second `enter` recorded the pick (trace: `browser picked … (40000 chars)`) and
-  wrote `~/.session-hub/pending.json`.
+- **The browser renders and works.** Driven through a real pty: the keybind
+  opened the route, which listed 50 real sessions from every harness with marker,
+  harness, age, message count and project, and the preview of the selected one
+  with its metadata, its cost in messages and tokens, the words `nothing sent yet`
+  and the head of the package; the selection moved, `tab` moved the focus to the
+  preview, `esc` cleared the filter and a second `esc` left. `enter` raised the
+  confirmation dialog with the measured cost; the second `enter` recorded the pick
+  (trace: `browser picked … (40000 chars)`) and wrote `~/.session-hub/pending.json`.
+- **The browser was driven headlessly, key by key, on the runtime OpenCode uses.**
+  `@opentui/solid`'s test renderer, on the embedded Bun
+  (`BUN_BE_BUN=1 opencode --conditions=browser`), against a build of this file made
+  with the same babel transform OpenCode applies, checking the captured frames and
+  colour spans: the lazy load (no hub call before the route is opened), the header
+  counts, the selection and its accent bar, `1`-`6` and `0` filtering the list, the
+  filter box typing and its honest empty state, the debounced transcript search,
+  both `esc` presses, `tab`, the two-pane layout at 110x32 and the one-pane
+  fallback at 80x24 and 60x20 with nothing drawn past the last row, and each
+  harness marker wearing the token the table above promises (`π` `success`, `✻`
+  `warning`, `⬡` `info`, `⌘` `accent`, `❯` `secondary`, `◆` `primary`). Every check
+  passed.
 - **The CLI bridge works through the same module both halves use.** `hub.ts` was
   imported directly and `findSessions`, `contextFor`, `nativeResume`,
   `pickSession`, `peekPending`, `takePending` and `clearPending` all returned real
@@ -338,11 +435,11 @@ Observed, not assumed. OpenCode 1.18.30, plugin running on Bun 1.3.14.
   --noUnusedParameters` against the real OpenCode and OpenTUI definitions, with a
   negative control confirming that JSX props and API calls are genuinely checked.
 
-**Not verified**, and not claimed: how the browser looks in a real terminal
-(colours, exact widths, and `scrollbox` behaviour on a very short terminal); the
-`/` filter prompt, `r`, and `escape`, which the harness did not drive; and the
-`ctrl+shift+h` binding, which a terminal without kitty keyboard reporting cannot
-send at all. To see the browser yourself:
+**Not verified**, and not claimed: `ctrl+shift+h` itself, which a terminal without
+kitty keyboard reporting cannot send at all (`alt+h` is the key that was driven);
+the mouse, which this view does not bind; and how the palette entry behaves when
+another plugin has already taken the `sessionhub.*` command names. To see the
+browser yourself:
 
 ```
 opencode

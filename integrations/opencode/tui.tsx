@@ -237,7 +237,7 @@ function segWidth(segments: Seg[]): number {
 }
 
 /**
- * Resolve a piece to a colour for the current theme and row state.
+ * Resolve a piece to a colour for the current theme.
  *
  * A selected row keeps its normal foregrounds. The tempting move is to swap them
  * for `selectedListItemText`, but that token belongs to the host's own selection
@@ -246,7 +246,7 @@ function segWidth(segments: Seg[]): number {
  * neighbours. Selection is carried by the background and the accent bar instead,
  * so the harness hue and the metadata stay legible and consistent.
  */
-function colorFor(theme: TuiThemeCurrent, segment: Seg, selected: boolean) {
+function colorFor(theme: TuiThemeCurrent, segment: Seg) {
   if (segment.color === "harness") {
     const style = styleFor(segment.harness)
     return style ? theme[style.token] : theme.textMuted
@@ -753,10 +753,10 @@ function createStore(api: TuiPluginApi): HubStore {
 // The browser
 // ---------------------------------------------------------------------------
 
-const Line = (props: { segments: Seg[]; theme: TuiThemeCurrent; selected?: boolean }) => (
+const Line = (props: { segments: Seg[]; theme: TuiThemeCurrent }) => (
   <box flexDirection="row">
     <For each={props.segments}>
-      {(segment) => <text fg={colorFor(props.theme, segment, props.selected === true)}>{segment.text}</text>}
+      {(segment) => <text fg={colorFor(props.theme, segment)}>{segment.text}</text>}
     </For>
   </box>
 )
@@ -786,7 +786,7 @@ const Row = (props: {
           {props.selected ? "\u258c" : " "}
         </text>
         <For each={main()}>
-          {(segment) => <text fg={colorFor(props.theme, segment, props.selected)}>{segment.text}</text>}
+          {(segment) => <text fg={colorFor(props.theme, segment)}>{segment.text}</text>}
         </For>
       </box>
       <box flexDirection="row">
@@ -1034,7 +1034,14 @@ const HubView = (props: { api: TuiPluginApi; store: HubStore }) => {
     </Show>
   )
 
-  /** The metadata block, the cost line, and the head of the package. Free, always. */
+  /**
+   * The metadata block, the cost line, and the head of the package. Free, always.
+   *
+   * The cost line is built by hand rather than with `formatCost`, because the pane
+   * is about 46 columns wide in the two-pane layout and the promise that matters
+   * most ("nothing sent yet") is the first thing a longer line would lose. The
+   * exact character count is still in the confirmation dialog.
+   */
   const previewBody = () => {
     const session = store.selectedSession()
     if (!session) {
@@ -1090,7 +1097,7 @@ const HubView = (props: { api: TuiPluginApi; store: HubStore }) => {
             [
               {
                 text: cost
-                  ? `importing ${cost.included}/${cost.included + cost.omitted} message(s) \u00b7 ${formatCost(cost.chars, cost.estimatedTokens)} \u00b7 nothing sent yet`
+                  ? `${cost.included}/${cost.included + cost.omitted} msgs · ~${cost.estimatedTokens.toLocaleString()} tokens · nothing sent yet`
                   : store.previewError()
                     ? `cost unavailable: ${oneLine(store.previewError()!, 80)}`
                     : "measuring the import\u2026",
