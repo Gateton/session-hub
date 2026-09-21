@@ -83,6 +83,10 @@ copy: `<plugin>/vendor`) does not exist, the hook runs
 `.sessionhub-vendor-attempted` marker so it never repeats. That is what makes
 `claude plugin install` work with no global setup.
 
+A plugin that already lives inside the hub's own checkout (the `--plugin-dir` case
+above) is left alone: there is nothing to copy, and a copy would shadow the live
+code. It keeps reading the checkout.
+
 Nothing else is written: no npm packages, no lockfiles, no daemon. A vendored copy
 is preferred over every other location, so an installed plugin keeps working even if
 the checkout it came from moves.
