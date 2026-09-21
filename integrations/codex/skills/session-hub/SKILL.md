@@ -63,14 +63,17 @@ sessionhub context <uid> --chars 40000 --json
 sessionhub native <uid> --json
 ```
 
-If `sessionhub` is not on PATH, the plugin's own copies are the fallback:
+If `sessionhub` is not on PATH, use the wrapper that ships with this plugin. It
+finds the hub itself, so it works wherever the plugin has been copied:
 
 ```bash
-node "${PLUGIN_ROOT}/../../bin/sessionhub.mjs" here --json
+node "${PLUGIN_ROOT}/scripts/hub-cli.mjs" here --json
 ```
 
-and if that path does not exist either, tell the user to run `sessionhub setup`
-or set `SESSION_HUB_ROOT`. Never invent session contents.
+If that answers that the hub cannot be found, tell the user exactly this: run
+`sessionhub setup`, or set `SESSION_HUB_ROOT` to the directory that contains
+`bin/sessionhub.mjs` and `mcp/server.mjs`. Do not try to work around it. Never
+invent session contents.
 
 ## The explicit import: `pick`
 

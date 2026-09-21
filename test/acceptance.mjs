@@ -511,6 +511,52 @@ check(
   `${noTty.stdout.slice(0, 120)}${noTty.stderr.slice(0, 120)}`,
 );
 
+process.stdout.write("\n6e. install argument handling and the PATH shim\n");
+const badOnly = run(["install", "--dry-run", "--only", "bogus"], { env });
+check("a misspelled --only is rejected", badOnly.code === 2, `exit ${badOnly.code}`);
+check(
+  "the rejection names the valid harnesses",
+  /unknown harness in --only: bogus/.test(badOnly.stderr) && /claude-code, codex, opencode/.test(badOnly.stderr),
+  (badOnly.stderr || badOnly.stdout).slice(0, 160),
+);
+check(
+  "a misspelled --only is not blamed on the machine",
+  !/No supported harness/.test(badOnly.stdout + badOnly.stderr),
+);
+
+// The shim has to land in the home of whoever ran the install, so point HOME at a
+// scratch directory and check the symlink, without touching the real one.
+const fakeForShim = tmpdir("shim-home");
+const shim = spawnSync(
+  process.execPath,
+  [
+    "--experimental-strip-types",
+    "-e",
+    `import { installCliOnPath } from ${JSON.stringify(path.join(repoRoot, "core", "install.ts"))};
+     const result = installCliOnPath(${JSON.stringify(path.join(repoRoot, "bin", "sessionhub.mjs"))});
+     console.log("SHIM " + JSON.stringify(result));`,
+  ],
+  { encoding: "utf8", env: { ...process.env, HOME: fakeForShim }, timeout: 60_000 },
+);
+let shimResult = null;
+try {
+  shimResult = JSON.parse((shim.stdout.match(/SHIM (.*)/) ?? [])[1]);
+} catch {
+  shimResult = null;
+}
+if (process.platform === "win32") {
+  check("the installer writes a command shim on Windows", Boolean(shimResult?.file?.endsWith(".cmd")), JSON.stringify(shimResult));
+} else {
+  check("the installer puts sessionhub on PATH", Boolean(shimResult?.file), JSON.stringify(shimResult));
+  check(
+    "the shim points at the hub's entry point",
+    Boolean(shimResult?.file) && fs.existsSync(shimResult.file) && fs.readlinkSync(shimResult.file).endsWith("sessionhub.mjs"),
+    shimResult ? String(shimResult.file) : "no shim",
+  );
+}
+check("the shim reports whether its directory is reachable", typeof shimResult?.onPath === "boolean", JSON.stringify(shimResult));
+fs.rmSync(fakeForShim, { recursive: true, force: true });
+
 process.stdout.write("\n7. the other project is untouched\n");
 if (fs.existsSync(path.join(OTHER_REPO, ".git"))) {
   const status = spawnSync("git", ["-C", OTHER_REPO, "status", "--porcelain"], { encoding: "utf8" });

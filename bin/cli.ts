@@ -18,9 +18,9 @@ import process from "node:process";
 
 import { Hub, HubReadError, hubHome } from "../core/hub.ts";
 import { looksLikeRoot, packageRoot, readOwnVersion, vendorInto, writeInstallRecord } from "../core/install.ts";
-import { anyFailed, detectTargets, installIntegrations } from "../core/install-harnesses.ts";
+import { INSTALLABLE, anyFailed, detectTargets, installIntegrations } from "../core/install-harnesses.ts";
 import { askSelection } from "../core/prompt.ts";
-import { stageHub } from "../core/install.ts";
+import { installCliOnPath, stageHub } from "../core/install.ts";
 import { HARNESS_LABEL, HARNESS_ORDER, type ExternalSession, type HarnessId } from "../core/types.ts";
 import { formatNativeResume } from "../core/native.ts";
 import { clearPending, readPending, writePending } from "../core/pending.ts";
@@ -248,6 +248,20 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
       .map((s) => s.trim())
       .filter(Boolean);
 
+    // A typo in --only used to fall through to "no supported harness found", which
+    // blames the machine for a misspelled argument.
+    if (only) {
+      const unknown = only.filter((name) => !INSTALLABLE.includes(name as (typeof INSTALLABLE)[number]));
+      if (unknown.length > 0) {
+        die(
+          `unknown harness in --only: ${unknown.join(", ")}\n` +
+            `Known: ${INSTALLABLE.join(", ")}\n` +
+            `For tools-only installation without a plugin, see the README.`,
+        );
+      }
+    }
+
+
     if (!only && !flagBool(args, "all") && !dryRun) {
       const detected = detectTargets();
       if (detected.length === 0) {
@@ -282,8 +296,17 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
     }
     const results = installIntegrations({ root: installRoot, only, dryRun: flagBool(args, "dry-run") });
 
+    const pathShim = dryRun ? null : installCliOnPath(path.join(installRoot, "bin", "sessionhub.mjs"));
+
     if (flagBool(args, "json")) {
-      return json({ root, installRoot, staged: staged.files, dryRun: flagBool(args, "dry-run"), results });
+      return json({
+        root,
+        installRoot,
+        staged: staged.files,
+        dryRun,
+        cli: pathShim ? { file: pathShim.file, onPath: pathShim.onPath } : null,
+        results,
+      });
     }
 
     const lines: string[] = [];
@@ -302,6 +325,14 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
       }
       if (result.manual) lines.push(`  next: ${result.manual}`);
       lines.push("");
+    }
+    if (pathShim) {
+      lines.push(
+        pathShim.onPath
+          ? `installed ${pathShim.file}, so \`sessionhub\` works in a terminal`
+          : `wrote ${pathShim.file}, but ${pathShim.dir} is not on your PATH. Add it with:\n  export PATH="${pathShim.dir}:$PATH"`,
+        "",
+      );
     }
     lines.push(
       results.some((r) => r.detected && !r.skipped)

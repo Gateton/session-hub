@@ -19,6 +19,9 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+/** The harnesses `install` knows how to install into. */
+export const INSTALLABLE = ["claude-code", "codex", "opencode"] as const;
+
 export interface InstallStep {
   /** What was run, written the way a person would type it. */
   command: string;

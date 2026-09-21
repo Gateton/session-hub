@@ -14,6 +14,7 @@
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { hubHome } from "./hub.ts";
@@ -134,6 +135,58 @@ export function stageHub(root: string, hubHomeDir?: string): { root: string; fil
     }
   }
   return { root: target, files, bytes };
+}
+
+/**
+ * Put a `sessionhub` command on the user's PATH.
+ *
+ * The README and the plugins talk about `sessionhub here`, and until now only
+ * `setup` mentioned PATH at all, so a user following the install would type a
+ * command that does not exist. A symlink keeps working when the staged copy is
+ * replaced, because it points at the entry point, not at the version.
+ *
+ * Returns where it was written and whether that directory is reachable, so the
+ * caller can tell the user the truth either way.
+ */
+export function installCliOnPath(cliPath: string): { dir: string; file: string; onPath: boolean } {
+  const dir = path.join(os.homedir(), ".local", "bin");
+  fs.mkdirSync(dir, { recursive: true });
+
+  if (process.platform === "win32") {
+    // Windows has no symlink-free equivalent that works without developer mode,
+    // so a tiny shim next to it is the honest option.
+    const file = path.join(dir, "sessionhub.cmd");
+    fs.writeFileSync(
+      file,
+      `@echo off
+"${process.execPath}" "${cliPath}" %*
+`,
+      "utf8",
+    );
+    return { dir, file, onPath: isOnPath(dir) };
+  }
+
+  const file = path.join(dir, "sessionhub");
+  try {
+    fs.rmSync(file, { force: true });
+    fs.symlinkSync(cliPath, file);
+    fs.chmodSync(cliPath, 0o755);
+  } catch (err) {
+    // A stale symlink or an odd filesystem is not worth failing the install for.
+    return { dir, file, onPath: false };
+  }
+  return { dir, file, onPath: isOnPath(dir) };
+}
+
+function isOnPath(dir: string): boolean {
+  const entries = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  return entries.some((entry) => {
+    try {
+      return path.resolve(entry) === path.resolve(dir);
+    } catch {
+      return false;
+    }
+  });
 }
 
 export function readOwnVersion(root: string): string {
