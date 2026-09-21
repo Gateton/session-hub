@@ -104,6 +104,48 @@ function run(command: string, args: string[], timeoutMs: number): InstallStep {
   return { command: printable, ok: (result.status ?? 1) === 0, output };
 }
 
+/**
+ * Point OpenCode's tui.json at the file that exports `tui`, not at the directory.
+ *
+ * Returns null when there is nothing to do, which is the common case once it has
+ * been fixed (or when the user only wants the server half).
+ */
+function ensureOpencodeTuiEntry(integrationDir: string): { file: string; detail: string } | null {
+  const configHome = process.env.XDG_CONFIG_HOME?.trim() || path.join(process.env.HOME ?? "", ".config");
+  const tuiFile = path.join(configHome, "opencode", "tui.json");
+  const wanted = path.join(integrationDir, "tui.tsx");
+
+  let config: { plugin?: unknown } = {};
+  let existed = false;
+  if (fs.existsSync(tuiFile)) {
+    existed = true;
+    try {
+      config = JSON.parse(fs.readFileSync(tuiFile, "utf8"));
+    } catch {
+      return null; // not ours to repair
+    }
+  }
+  if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
+
+  const list = Array.isArray(config.plugin) ? (config.plugin as unknown[]) : [];
+  const hasExplicit = list.includes(wanted);
+  const hasDirectory = list.includes(integrationDir);
+  if (hasExplicit || (!hasDirectory && existed)) return null;
+
+  const next = list.filter((entry) => entry !== integrationDir);
+  next.push(wanted);
+  config.plugin = next;
+  if (existed) fs.copyFileSync(tuiFile, `${tuiFile}.session-hub-${Date.now()}.bak`);
+  fs.mkdirSync(path.dirname(tuiFile), { recursive: true });
+  fs.writeFileSync(tuiFile, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return {
+    file: tuiFile,
+    detail: hasDirectory
+      ? `replaced the directory entry with ${wanted}, which is the half that exports tui`
+      : `added ${wanted} so the browser can load`,
+  };
+}
+
 /** The root a marketplace with our name is registered at, when it is not ours. */
 function staleMarketplace(
   target: (typeof TARGETS)[number],
@@ -119,6 +161,42 @@ function staleMarketplace(
     if (root && root !== opts.root) return root;
   }
   return null;
+}
+
+export interface DetectedTarget {
+  harness: "claude-code" | "codex" | "opencode";
+  label: string;
+  binary: string;
+  path: string;
+  version: string;
+}
+
+/**
+ * Which supported agents are actually installed here, with their versions.
+ *
+ * The installer shows this list and lets the user choose, because installing into
+ * every agent on a machine is not what "install this for me" usually means.
+ */
+export function detectTargets(timeoutMs = 20_000): DetectedTarget[] {
+  const found: DetectedTarget[] = [];
+  for (const target of TARGETS) {
+    const binary = onPath(target.binary);
+    if (!binary) continue;
+    const probe = spawnSync(target.binary, ["--version"], {
+      encoding: "utf8",
+      timeout: timeoutMs,
+      env: process.env,
+    });
+    const raw = `${probe.stdout ?? ""}${probe.stderr ?? ""}`.trim().split("\n")[0] ?? "";
+    found.push({
+      harness: target.harness,
+      label: target.label,
+      binary: target.binary,
+      path: binary,
+      version: raw.slice(0, 60),
+    });
+  }
+  return found;
 }
 
 export function installIntegrations(opts: InstallOptions): HarnessInstallResult[] {
@@ -181,6 +259,21 @@ export function installIntegrations(opts: InstallOptions): HarnessInstallResult[
         continue;
       }
       result.steps.push(run(target.binary, args, timeoutMs));
+    }
+
+    // OpenCode's own installer records the plugin *directory* in tui.json. That
+    // resolves to the package's main entry, which is the server half, and the TUI
+    // loader needs the file that exports `tui`. Normalise it so the browser
+    // actually loads, and leave a backup the first time we touch the file.
+    if (target.harness === "opencode" && result.steps.every((s) => s.ok) && !opts.dryRun) {
+      const fixed = ensureOpencodeTuiEntry(integrationDir);
+      if (fixed) {
+        result.steps.push({
+          command: `wrote the tui entry into ${fixed.file}`,
+          ok: true,
+          output: fixed.detail,
+        });
+      }
     }
 
     // Codex ignores a plugin's own hooks file, so wire them into its config.

@@ -293,7 +293,11 @@ async function claimPending(reason: string): Promise<Delivered | null> {
     return null
   }
   if (!outcome.data) return null
-  return { uid: outcome.data.uid, estimatedTokens: outcome.data.estimatedTokens, text: outcome.data.text }
+  return {
+    uid: outcome.data.pending?.uid ?? "unknown",
+    estimatedTokens: outcome.data.estimatedTokens,
+    text: outcome.data.text,
+  }
 }
 
 /** True when the prompt already carries this session, so it is not imported twice. */

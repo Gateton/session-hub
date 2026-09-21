@@ -1,0 +1,40 @@
+{
+  "name": "session-hub-opencode",
+  "version": "0.1.0",
+  "private": true,
+  "description": "session-hub for OpenCode: find a conversation you left in Claude Code, Codex, Crush, JCode or Pi, import its context here, or reopen it where it lives. Includes a TUI browser.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Gateton",
+  "homepage": "https://github.com/Gateton/session-hub#readme",
+  "//": [
+    "Metadata for this integration directory. It declares no runtime dependencies on purpose:",
+    "",
+    "  - a plugin loaded by path cannot resolve anything from node_modules, so plugin.ts",
+    "    and tui.tsx import only node builtins, relative files, and (for the TUI) the two",
+    "    specifiers OpenCode rewrites for TUI plugins: solid-js and @opentui/solid.",
+    "    Everything from @opencode-ai/plugin is a type-only import, erased before running.",
+    "  - the export map below exposes two entries because a module cannot export both",
+    "    halves: OpenCode requires a plugin's default export to be either the server plugin",
+    "    or the TUI plugin, never both. opencode.json takes '.', tui.json takes './tui'.",
+    "",
+    "`private` is true because the package is not published yet: OpenCode installs a",
+    "plugin either by path (opencode plugin <dir> -g) or from npm. Remove it on the day",
+    "this package is published."
+  ],
+  "main": "./plugin.ts",
+  "exports": {
+    ".": "./plugin.ts",
+    "./tui": "./tui.tsx"
+  },
+  "files": [
+    "plugin.ts",
+    "tui.tsx",
+    "hub.ts",
+    "scripts",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

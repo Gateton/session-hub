@@ -18,7 +18,8 @@ import process from "node:process";
 
 import { Hub, HubReadError, hubHome } from "../core/hub.ts";
 import { looksLikeRoot, packageRoot, readOwnVersion, vendorInto, writeInstallRecord } from "../core/install.ts";
-import { anyFailed, installIntegrations } from "../core/install-harnesses.ts";
+import { anyFailed, detectTargets, installIntegrations } from "../core/install-harnesses.ts";
+import { askSelection } from "../core/prompt.ts";
 import { stageHub } from "../core/install.ts";
 import { HARNESS_LABEL, HARNESS_ORDER, type ExternalSession, type HarnessId } from "../core/types.ts";
 import { formatNativeResume } from "../core/native.ts";
@@ -52,6 +53,7 @@ Options:
   --chars <n>      Context budget in characters (default 40000)
   --only <list>    With install: comma-separated claude-code,codex,opencode
   --in-place       With install: use this directory instead of staging a copy
+  --all            With install: install into every agent found, without asking
   --dry-run        Show what install would run, without running it
   --deep           Search full transcripts instead of the indexed excerpt
   --max <n>        Sessions to read in --deep mode (default 400)
@@ -237,10 +239,47 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
     // installing without it would produce plugins that cannot answer anything.
     if (!flagBool(args, "dry-run")) writeInstallRecord(installRoot);
 
-    const only = flagStr(args, "only")
+    // Choosing where to install is the user's call, so when nothing was specified
+    // and there is a person at the keyboard, ask. --only and --all keep it
+    // scriptable, and a non-interactive caller gets told what to pass instead of
+    // a menu it cannot see.
+    let only = flagStr(args, "only")
       ?.split(",")
       .map((s) => s.trim())
       .filter(Boolean);
+
+    if (!only && !flagBool(args, "all") && !dryRun) {
+      const detected = detectTargets();
+      if (detected.length === 0) {
+        process.stdout.write("No supported agent found on PATH (claude, codex, opencode).\n");
+        return;
+      }
+      // SESSION_HUB_FORCE_TTY lets the acceptance suite drive the menu over a
+      // pipe; nothing else changes behaviour.
+      const interactive =
+        (process.stdin.isTTY && process.stdout.isTTY) || process.env.SESSION_HUB_FORCE_TTY === "1";
+      if (interactive) {
+        const chosen = await askSelection(detected);
+        if (chosen.length === 0) {
+          process.stdout.write("Nothing selected, nothing installed.\n");
+          return;
+        }
+        only = chosen;
+      } else {
+        process.stdout.write(
+          [
+            `Detected: ${detected.map((d) => `${d.label} (${d.binary})`).join(", ")}`,
+            "",
+            "Nothing was installed because this is not an interactive terminal.",
+            "Pass the ones you want, for example:",
+            "",
+            `  sessionhub install --only ${detected.map((d) => d.harness).join(",")}`,
+            "",
+          ].join("\n"),
+        );
+        return;
+      }
+    }
     const results = installIntegrations({ root: installRoot, only, dryRun: flagBool(args, "dry-run") });
 
     if (flagBool(args, "json")) {

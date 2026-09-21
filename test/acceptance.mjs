@@ -470,6 +470,47 @@ check("a bad uid is reported as an error, not as empty", byId.get(4)?.result?.is
 check("an unknown method is refused properly", byId.get(5)?.error?.code === -32601);
 check("stdout carried protocol messages only", mcp.lines.length === 5, `${mcp.lines.length} messages`);
 
+process.stdout.write("\n6d. the installer asks before installing\n");
+const promptProbe = (input) =>
+  spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "-e",
+      `import { askSelection } from ${JSON.stringify(path.join(repoRoot, "core", "prompt.ts"))};
+       const chosen = await askSelection([
+         { harness: "claude-code", label: "Claude Code", binary: "claude", version: "2.1.270" },
+         { harness: "codex", label: "Codex", binary: "codex", version: "0.154.0" },
+         { harness: "opencode", label: "OpenCode", binary: "opencode", version: "1.18.30" },
+       ]);
+       console.log("CHOSEN " + JSON.stringify(chosen));`,
+    ],
+    { input, encoding: "utf8", timeout: 60_000 },
+  );
+const chosenOf = (r) => (r.stdout.match(/CHOSEN (.*)/) ?? [])[1];
+
+const picked = promptProbe("1,3\n");
+check("a comma list selects those agents", chosenOf(picked) === '["claude-code","opencode"]', chosenOf(picked));
+check("the menu shows each agent and its version", /Claude Code\s+2\.1\.270/.test(picked.stdout));
+
+const all = promptProbe("a\n");
+check("'a' selects every detected agent", chosenOf(all) === '["claude-code","codex","opencode"]', chosenOf(all));
+
+const none = promptProbe("n\n");
+check("'n' selects nothing", chosenOf(none) === "[]", chosenOf(none));
+
+const retry = promptProbe("9\nbanana\n2\n");
+check("invalid answers are re-asked, not guessed", chosenOf(retry) === '["codex"]', chosenOf(retry));
+check("the retry names the offending input", /banana/.test(retry.stdout));
+check("the installer never installs without an answer", !/Added marketplace/.test(retry.stdout));
+
+const noTty = run(["install"], { env: { ...env }, home: hubHome });
+check(
+  "a non-interactive install refuses and explains",
+  /not an interactive terminal/.test(noTty.stdout) && /--only/.test(noTty.stdout),
+  `${noTty.stdout.slice(0, 120)}${noTty.stderr.slice(0, 120)}`,
+);
+
 process.stdout.write("\n7. the other project is untouched\n");
 if (fs.existsSync(path.join(OTHER_REPO, ".git"))) {
   const status = spawnSync("git", ["-C", OTHER_REPO, "status", "--porcelain"], { encoding: "utf8" });

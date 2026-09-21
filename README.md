@@ -53,28 +53,47 @@ cost is printed every time, and `--chars` sets the ceiling.
 
 ## Install
 
-### One command
+### One command, and it asks you where
 
 ```bash
-node /path/to/session-hub/bin/sessionhub.mjs install
+curl -fsSL <raw-url>/install.sh | bash     # Linux, macOS
+irm <raw-url>/install.ps1 | iex            # Windows (PowerShell)
 ```
 
-It detects the agents you have (`claude`, `codex`, `opencode`), installs the
-integration into each one, stages the hub in `~/.session-hub/src` so nothing
-depends on where the copy came from, and prints the one step it cannot do for
-you: Codex asks you to trust its hooks once, in `/hooks`.
-
-`--dry-run` shows the exact commands before running them, `--only codex,opencode`
-narrows the scope, `--json` is for scripts.
-
-Once the package is on npm, this is the same thing in one line, with no checkout:
+From a checkout, the same thing with no downloading:
 
 ```bash
-npx -y session-hub install
+./install.sh              # Linux, macOS
+.\install.ps1             # Windows
 ```
 
-npm publication is the last step before the first release; until then the
-command above is the one that works.
+The installer finds the agents you have on `PATH` (Claude Code, Codex, OpenCode),
+shows their versions, and **asks which ones you want session-hub in**. Nothing is
+installed in an agent you did not pick. It then stages the hub in
+`~/.session-hub/src`, so nothing depends on where the code came from, installs
+your choices, wires Codex's delivery hooks, and prints the one step it cannot do
+for you: Codex asks you to trust those hooks once, in `/hooks`.
+
+For scripts and CI, where there is nobody to ask:
+
+```bash
+./install.sh --only codex --json
+./install.sh --all --dry-run
+```
+
+With no `--only` and no `--all` in a non-interactive shell, it prints what to pass
+instead of guessing.
+
+### Optional: from npm
+
+Once the package is published, the installer is one line with no clone, and the
+tools can be registered without any plugin at all:
+
+```bash
+npx -y session-hub install                                    # the whole thing
+claude mcp add session-hub -- npx -y session-hub mcp           # tools only
+codex  mcp add session-hub -- npx -y session-hub mcp           # tools only
+```
 
 ### Just the tools, no plugin
 

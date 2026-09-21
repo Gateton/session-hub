@@ -106,11 +106,13 @@ export interface HubPeek {
   expired: boolean
 }
 
-/** What `pending --take` hands to a hook: the block that goes into the prompt. */
+/**
+ * What `pending --take` hands to a hook: the block that goes into the prompt.
+ * The uid is nested, and only the block carries `text`, which is how a caller
+ * tells "nothing pending" (`{pending: null}`) from a real selection.
+ */
 export interface HubPendingBlock {
-  uid: string
-  harness: HarnessId
-  title: string | null
+  pending: { uid: string; harness: HarnessId; title: string | null }
   chars: number
   estimatedTokens: number
   text: string
