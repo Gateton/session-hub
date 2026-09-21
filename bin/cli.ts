@@ -17,10 +17,10 @@ import path from "node:path";
 import process from "node:process";
 
 import { Hub, HubReadError, hubHome } from "../core/hub.ts";
-import { looksLikeRoot, packageRoot, vendorInto, writeInstallRecord } from "../core/install.ts";
+import { looksLikeRoot, packageRoot, readOwnVersion, vendorInto, writeInstallRecord } from "../core/install.ts";
 import { HARNESS_LABEL, HARNESS_ORDER, type ExternalSession, type HarnessId } from "../core/types.ts";
 import { formatNativeResume } from "../core/native.ts";
-import { clearPending, readPending, takePending, writePending } from "../core/pending.ts";
+import { clearPending, readPending, writePending } from "../core/pending.ts";
 
 const USAGE = `sessionhub: browse, search and continue sessions from every coding agent on this machine.
 
@@ -36,6 +36,7 @@ Usage:
   sessionhub pending [options]           Show or take the picked session (what hooks call)
   sessionhub index [options]             Rebuild the local index
   sessionhub doctor [options]            Report which harnesses were found and how many sessions
+  sessionhub version                     Print the version
   sessionhub setup [options]             Record where the hub lives, for the harness plugins
   sessionhub vendor --into <dir>         Copy the hub into a plugin so it is self-contained
 
@@ -172,6 +173,12 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
     process.stdout.write(`${USAGE}\n`);
   },
 
+  async version(args) {
+    const version = readOwnVersion(packageRoot());
+    if (flagBool(args, "json")) return json({ name: "session-hub", version, node: process.version });
+    process.stdout.write(`session-hub ${version} (node ${process.version})\n`);
+  },
+
   async setup(args) {
     const root = packageRoot();
     if (!looksLikeRoot(root)) {
@@ -259,21 +266,34 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
       return;
     }
 
-    // Default and --take: print the block a harness hook should inject, and
-    // clear it. Empty output with exit 0 means "nothing to inject", which is
-    // what every hook wants to hear most of the time.
-    const taken = takePending();
-    if (!taken) {
+    // Default and --take: print the block a harness hook should inject. Empty
+    // output with exit 0 means "nothing to inject", which is what every hook
+    // wants to hear most of the time.
+    //
+    // The selection is cleared only after the block has been built. Clearing
+    // first would lose the user's pick whenever building failed (a slow read, a
+    // store that moved), and a hook cannot tell that apart from "nothing was
+    // picked", so it would silently drop the session the user chose.
+    const found = readPending();
+    if (!found || found.expired) {
+      if (found) clearPending();
       if (flagBool(args, "json")) return json({ pending: null });
       return;
     }
+    const taken = found.selection;
     await command(args, async (hub) => {
       await hub.ensureFresh();
       const loaded = await hub.contextFor(taken.uid, { charBudget: taken.chars });
       if (!loaded) {
-        process.stderr.write(`pending session ${taken.uid} is no longer readable; nothing injected\n`);
+        process.stderr.write(
+          `pending session ${taken.uid} could not be read, so nothing was injected and the selection is still pending.\n` +
+            `Check it with: sessionhub pending --peek (cancel with sessionhub pending --clear)\n`,
+        );
+        process.exitCode = 3;
         return;
       }
+      // Built successfully: the pick is now consumed, exactly once.
+      clearPending();
       const { session, context } = loaded;
       const block = [
         `[session-hub] The user picked a conversation from ${HARNESS_LABEL[session.harness]} to bring into this one.`,
@@ -568,6 +588,9 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  if (args.command === "version" || args.flags.has("version")) {
+    return void (await commands.version(args));
+  }
   if (args.flags.has("help") || args.command === "help" || args.command === "--help") {
     process.stdout.write(`${USAGE}\n`);
     return;
