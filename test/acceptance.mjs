@@ -193,7 +193,18 @@ if (liveRead.length > 0) {
 const changedAnywhere = diffFingerprints(before, afterScan);
 const created = changedAnywhere.filter((f) => f.endsWith("(new)"));
 const removed = changedAnywhere.filter((f) => f.endsWith("(removed)"));
-check("a full scan created no file outside the hub home", created.length === 0, created.slice(0, 5).join(", "));
+// Other agents running right now create their own session files, so a blanket
+// "no new files" claim is noise on a live machine. What can be asserted exactly is
+// that the hub's own artifacts never appear outside the hub home: they are the
+// only names it writes. The quiet, airtight version of this claim is the foreign
+// home below.
+const OUR_ARTIFACTS = /(index\.sqlite|pending\.json|install\.json|opencode-plugin-loaded\.log)/;
+const ourArtifactsOutside = created.filter((file) => OUR_ARTIFACTS.test(file));
+check(
+  "a full scan created no hub artifact outside the hub home",
+  ourArtifactsOutside.length === 0,
+  ourArtifactsOutside.slice(0, 5).join(", "),
+);
 check("a full scan removed no file outside the hub home", removed.length === 0, removed.slice(0, 5).join(", "));
 check(
   "the database data files are untouched",

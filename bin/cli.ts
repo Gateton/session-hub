@@ -226,18 +226,7 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
     if (!looksLikeRoot(root)) {
       die(`cannot find the hub at ${root}. Run this from an unpacked session-hub package.`);
     }
-    // Installers run from places that disappear: npx's cache is garbage-collected
-    // and a checkout can move. Stage a copy in the hub home so every plugin and
-    // the MCP server has one path that stays put.
     const dryRun = flagBool(args, "dry-run");
-    const staged = flagBool(args, "in-place") || dryRun ? { root, files: 0, bytes: 0 } : stageHub(root);
-    const installRoot = dryRun ? path.join(hubHome(), "src") : staged.root;
-    if (!looksLikeRoot(installRoot)) {
-      die(`staging the hub into ${installRoot} did not produce a usable copy.`);
-    }
-    // Register the install location: plugins find the hub through this record, so
-    // installing without it would produce plugins that cannot answer anything.
-    if (!flagBool(args, "dry-run")) writeInstallRecord(installRoot);
 
     // Choosing where to install is the user's call, so when nothing was specified
     // and there is a person at the keyboard, ask. --only and --all keep it
@@ -294,7 +283,19 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
         return;
       }
     }
-    const results = installIntegrations({ root: installRoot, only, dryRun: flagBool(args, "dry-run") });
+    // Staging happens after the questions, so a cancelled install leaves nothing
+    // behind: installers run from places that disappear (an npx cache, a moved
+    // checkout), so the code is copied somewhere stable first.
+    const staged = flagBool(args, "in-place") || dryRun ? { root, files: 0, bytes: 0 } : stageHub(root);
+    const installRoot = dryRun ? path.join(hubHome(), "src") : staged.root;
+    if (!looksLikeRoot(installRoot)) {
+      die(`staging the hub into ${installRoot} did not produce a usable copy.`);
+    }
+    // Plugins find the hub through this record, so an install without it would
+    // produce plugins that cannot answer anything.
+    if (!dryRun) writeInstallRecord(installRoot);
+
+    const results = installIntegrations({ root: installRoot, only, dryRun });
 
     const pathShim = dryRun ? null : installCliOnPath(path.join(installRoot, "bin", "sessionhub.mjs"));
 

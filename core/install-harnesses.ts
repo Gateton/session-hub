@@ -131,20 +131,23 @@ function ensureOpencodeTuiEntry(integrationDir: string): { file: string; detail:
   if (typeof config !== "object" || config === null || Array.isArray(config)) return null;
 
   const list = Array.isArray(config.plugin) ? (config.plugin as unknown[]) : [];
-  const hasExplicit = list.includes(wanted);
-  const hasDirectory = list.includes(integrationDir);
-  if (hasExplicit || (!hasDirectory && existed)) return null;
 
+  // `opencode plugin <dir> -g` re-adds the directory every time it runs, so the
+  // desired state is built from scratch: the directory entry out, the file entry
+  // in. Anything else the user put there is left alone.
   const next = list.filter((entry) => entry !== integrationDir);
-  next.push(wanted);
+  const hadDirectory = next.length !== list.length;
+  if (!next.includes(wanted)) next.push(wanted);
+  if (next.length === list.length && next.every((entry, index) => entry === list[index])) return null;
+
   config.plugin = next;
   if (existed) fs.copyFileSync(tuiFile, `${tuiFile}.session-hub-${Date.now()}.bak`);
   fs.mkdirSync(path.dirname(tuiFile), { recursive: true });
   fs.writeFileSync(tuiFile, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   return {
     file: tuiFile,
-    detail: hasDirectory
-      ? `replaced the directory entry with ${wanted}, which is the half that exports tui`
+    detail: hadDirectory
+      ? `replaced the directory entry with ${wanted}, the half that exports tui`
       : `added ${wanted} so the browser can load`,
   };
 }

@@ -33,6 +33,16 @@ const valueOf = (flag) => {
 
 const codexHome = process.env.CODEX_HOME?.trim() || path.join(os.homedir(), ".codex");
 const hooksFile = path.join(codexHome, "hooks.json");
+
+// A fresh CODEX_HOME (a scratch home, or Codex's first run on a machine) has no
+// directory yet, and writing hooks.json into a missing directory used to end in a
+// raw node:fs stack trace.
+try {
+  fs.mkdirSync(codexHome, { recursive: true });
+} catch (err) {
+  console.error(`session-hub: cannot create ${codexHome}: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(2);
+}
 const pluginDir = valueOf("--target") ? path.resolve(valueOf("--target")) : path.resolve(scriptDir, "..");
 const hookScript = path.join(pluginDir, "scripts", "sessionhub-hook.mjs");
 const cliScript = path.join(pluginDir, "scripts", "hub-cli.mjs");
@@ -141,7 +151,12 @@ if (existed) {
   fs.copyFileSync(hooksFile, backup);
   console.log(`backup: ${backup}`);
 }
-fs.writeFileSync(hooksFile, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+try {
+  fs.writeFileSync(hooksFile, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+} catch (err) {
+  console.error(`session-hub: could not write ${hooksFile}: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(2);
+}
 
 console.log(`wrote ${hooksFile}`);
 for (const line of report) console.log(`  - ${line}`);
