@@ -37,7 +37,8 @@ window resets and you spend the first ten minutes rebuilding what you already kn
 
 `session-hub` removes that step. It reads the session stores every agent already writes,
 puts them in one list, and turns the one you pick into a context package the agent you
-are in now can actually use.
+are in now can actually use. It ships as an MCP server with three read-only tools, plus a
+plugin for each agent that puts them inside the chat you are already in.
 
 ## What it does
 
