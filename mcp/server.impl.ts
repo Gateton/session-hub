@@ -51,7 +51,7 @@ const TOOLS = [
         dir: {
           type: "string",
           description:
-            "Project directory. Only sessions from that project are returned. Defaults to the current working directory when omitted, which answers 'what was I doing in this repo'.",
+            "Project directory. Only sessions from that project are returned. When omitted and no query is given, the current working directory is used, which answers 'what was I doing in this repo'. With a query and no dir, every project is searched.",
         },
         harness: {
           type: "string",
@@ -144,7 +144,15 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<Re
 
   if (name === "search") {
     const query = typeof args.query === "string" ? args.query.trim() : "";
-    const dir = typeof args.dir === "string" ? args.dir : undefined;
+    // No query and no dir means "what was I doing in this project", so the
+    // current directory is the honest default. A query without a dir stays
+    // global, because that is what asking about a topic means.
+    const dir =
+      typeof args.dir === "string"
+        ? args.dir
+        : query
+          ? undefined
+          : process.cwd();
     const harness = typeof args.harness === "string" ? (args.harness as HarnessId) : undefined;
     const limit = typeof args.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : 15;
 
@@ -160,8 +168,12 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<Re
         );
       }
       const shown = filtered.slice(0, limit);
+      const heading =
+        shown.length < filtered.length
+          ? `Showing ${shown.length} of ${filtered.length} session(s) for ${dir}${query ? ` matching "${query}"` : ""}:`
+          : `${filtered.length} session(s) for ${dir}${query ? ` matching "${query}"` : ""}:`;
       return textResult(
-        `${filtered.length} session(s) for ${dir}${query ? ` matching "${query}"` : ""}:\n\n` +
+        `${heading}\n\n` +
           shown.map(formatHit).join("\n\n") +
           `\n\nLoad one with the \`context\` tool and its uid.`,
       );

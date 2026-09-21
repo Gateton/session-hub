@@ -32,8 +32,9 @@ Not for this conversation: what happened here is already in front of you.
 MCP tools are `mcp__plugin_session-hub_hub__search`, `..._context`, `..._native`.
 
 1. **Find it.** `search` with `{"query": "auth bug", "dir": "/path/to/project"}`.
-   Leave out `dir` to search the current directory, which answers "in this repo".
-   Pass `{"dir": "/some/other/project"}` to look at another project, or
+   With a query and no `dir`, every project is searched. With no query and no
+   `dir`, the current project is listed, which answers "what was I doing in this
+   repo". Pass `{"dir": "/some/other/project"}` for another project, or
    `{"harness": "codex"}` to restrict to one agent.
 2. **Show the user the matches** with their harness, project, date and message count,
    then ask which one. Do not guess on their behalf.
