@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="https://raw.githubusercontent.com/Gateton/session-hub/main/assets/opencode-hub.png" alt="session-hub inside OpenCode: sessions from Pi, Claude Code, Codex, OpenCode, Crush and JCode in one list, each with its own colour, next to a preview of the conversation that would be imported" width="880">
+
 # session-hub
 
 **Continue the work you left in another coding agent.**
@@ -7,6 +9,10 @@
 Find a session from Codex, OpenCode, Claude Code, Crush, JCode or Pi, bring its
 conversation into the agent you are using right now, and keep going without
 re-explaining anything.
+
+[![npm](https://img.shields.io/npm/v/session-hub?label=npm)](https://www.npmjs.com/package/session-hub)
+[![Node](https://img.shields.io/badge/node-%3E%3D22.5-1f8f4d)](package.json)
+[![License](https://img.shields.io/badge/license-MIT-f5a623)](LICENSE)
 
 </div>
 
@@ -56,8 +62,8 @@ cost is printed every time, and `--chars` sets the ceiling.
 ### One command, and it asks you where
 
 ```bash
-curl -fsSL <raw-url>/install.sh | bash     # Linux, macOS
-irm <raw-url>/install.ps1 | iex            # Windows (PowerShell)
+curl -fsSL https://raw.githubusercontent.com/Gateton/session-hub/main/install.sh | bash
+irm https://raw.githubusercontent.com/Gateton/session-hub/main/install.ps1 | iex   # Windows
 ```
 
 From a checkout, the same thing with no downloading:
@@ -113,15 +119,15 @@ config, or the plugin below.
 
 ```text
 # Claude Code
-/plugin marketplace add /path/to/session-hub
+/plugin marketplace add Gateton/session-hub
 /plugin install session-hub@session-hub
 
 # Codex
-codex plugin marketplace add /path/to/session-hub
+codex plugin marketplace add Gateton/session-hub
 codex plugin add session-hub@session-hub
 
 # OpenCode
-opencode plugin /path/to/session-hub/integrations/opencode -g
+opencode plugin /path/to/session-hub/integrations/opencode -g   # or the npm name, once published
 ```
 
 `/path/to/session-hub` is the directory you cloned into, a real path rather than a
@@ -130,6 +136,48 @@ placeholder to paste verbatim.
 Each plugin is self-contained: Claude Code copies a plugin into its own cache, so
 on first run it vendors the hub into itself and then resolves through its own
 copy. Nothing else needs to be installed.
+
+## How it works in each agent
+
+The hub is the same everywhere: one binary reads every agent's session store
+read-only, indexes it locally, and turns the session you choose into a context
+package. What differs is how you reach for it and how the conversation arrives.
+
+### Claude Code
+
+| | |
+|---|---|
+| What you install | a plugin: one skill, two hooks, one MCP server named `hub` |
+| How you ask | in plain language. *"continue what I left in Codex"*, *"the session where we fixed the parser"*. The skill teaches the model when to reach for the tools |
+| The tools | `mcp__plugin_session-hub_hub__search`, `…__context`, `…__native` |
+| How the conversation arrives | `context` brings it in during that turn, or you pick a session with `sessionhub pick <uid>` and the `UserPromptSubmit` hook delivers it with your **next** message as `additionalContext` |
+| Manual step | none |
+| Detail | the injected block is capped at 9,600 characters, because Claude Code cuts a hook's context at 10,000 |
+
+### Codex
+
+| | |
+|---|---|
+| What you install | a plugin: one skill, one MCP server, and two hooks |
+| How you ask | the same plain language; the tools appear as `hub.search`, `hub.context`, `hub.native` |
+| How the conversation arrives | the same two paths: `context` for this turn, or a pick delivered by the `UserPromptSubmit` hook |
+| Manual step | **trust the hooks once**, in `/hooks`. The installer asks whether to do that for you by writing `bypass_hook_trust = true` instead, and explains what that means |
+| Detail | the tools declare themselves read-only, which is the annotation Codex's approval policy reads before deciding whether to ask; and Codex runs commands under a sandbox, which is why the hub can answer from an index it is not allowed to rewrite |
+
+### OpenCode
+
+| | |
+|---|---|
+| What you install | a plugin in two halves: tools and `/hub` in the conversation, plus a browser in the terminal |
+| How you ask | `ctrl+shift+h` or `alt+h` opens the browser; `/hub` lists or searches in the conversation; `/hub load <uid>`, `/hub pending`, `/hub reopen <uid>`, `/hub clear` |
+| The tools | `sessionhub_find`, `sessionhub_search`, `sessionhub_load`, `sessionhub_reopen` |
+| How the conversation arrives | a pick is handed to `chat.message`, so it reaches the model with your next message and never twice |
+| Manual step | none |
+| Detail | OpenCode is the only agent with an API for a real terminal UI, so this is where the browser lives: per-harness colours, a live filter, a preview that costs no tokens |
+
+In all three, the same rule holds: **you choose the session and you see the cost**.
+Nothing is imported behind your back, and a session that belongs to another agent
+is never converted into this one's format.
 
 ### What has actually been verified
 
@@ -142,6 +190,7 @@ Claims here are tied to observed runs, not to what the docs imply:
 | Codex | `codex plugin marketplace add` + `plugin add` install from this checkout; `codex mcp list` resolves the `hub` server from the plugin cache; the hook delivers the picked session once; a live `codex exec` turn called `hub.search` and quoted the injected block verbatim |
 | OpenCode | See `integrations/opencode/README.md` for what was and was not exercised |
 | Claude Code, live turn | **Not verified**: this machine's Claude Code cannot authenticate headlessly (`OAuth session expired`), so the interactive flow is the one thing left to a human |
+| Codex, after the latest fixes | the read-only annotations, the sandbox fallback and the hook trust override were verified in isolation, but a live Codex turn has not run again since (the account hit its usage limit mid-audit). OpenCode was verified in a real turn, delivery included |
 
 ## Commands
 

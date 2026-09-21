@@ -392,6 +392,8 @@ interface HubStore {
   error: () => string | null
   note: () => string | null
   origin: () => string
+  /** Which scope the list came from: the project, or everywhere after a fallback. */
+  scopeNow: () => "project" | "all"
   searchNote: () => string | null
   selected: () => number
   setSelected: (index: number) => void
@@ -433,6 +435,13 @@ interface HubStore {
  */
 function createStore(api: TuiPluginApi): HubStore {
   const [rows, setRows] = createSignal<HubSession[]>([])
+  /**
+   * Which scope the hub actually answered with, not the one we asked for. The hub
+   * falls back to "every project" when the current project has nothing, and the
+   * subtitle has to say so: claiming "this project" over a list from three
+   * projects is the kind of small lie that makes a tool feel broken.
+   */
+  const [scope, setScope] = createSignal<"project" | "all">("project")
   const [selected, setSelected] = createSignal(0)
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string | null>(null)
@@ -479,11 +488,17 @@ function createStore(api: TuiPluginApi): HubStore {
     )
   })
 
+  /**
+   * Which scope the list actually came from. The view needs this too, so it is
+   * exposed rather than recomputed.
+   */
+  const scopeNow = (): "project" | "all" => scope()
+
   const origin = (): string => {
     if (hits()) return `transcript search for "${oneLine(text().trim(), 40)}" over every project`
     if (text().trim()) return `${harness() ? harnessLabel(harness()!) + " matches" : "matches"} in the loaded list (local filter)`
     if (harness()) return `${harnessLabel(harness()!)} sessions, every project, newest first`
-    return "this project, newest first"
+    return scope() === "all" ? "every project, newest first" : "this project, newest first"
   }
 
   const loaded = (): number => {
@@ -685,6 +700,7 @@ function createStore(api: TuiPluginApi): HubStore {
       return
     }
     setRows(result.data.sessions ?? [])
+    setScope(result.data.scope === "all" ? "all" : "project")
     setSelected(0)
     setPreviewOffset(0)
     const writable = indexWriteNote()
@@ -717,6 +733,7 @@ function createStore(api: TuiPluginApi): HubStore {
     error,
     note,
     origin,
+    scopeNow,
     searchNote,
     selected,
     setSelected,
@@ -984,7 +1001,9 @@ const HubView = (props: { api: TuiPluginApi; store: HubStore }) => {
                       ? `nothing matches "${oneLine(store.text().trim(), 60)}"`
                       : store.harness()
                         ? `no ${harnessLabel(store.harness()!)} sessions in ${store.origin()}`
-                        : "no sessions are recorded for this project yet",
+                        : store.scopeNow() === "all"
+                          ? "no sessions are recorded anywhere yet"
+                          : "no sessions are recorded for this project yet",
                   color: "muted",
                 },
               ],
@@ -1183,6 +1202,25 @@ const HubView = (props: { api: TuiPluginApi; store: HubStore }) => {
     ]
   }
 
+  /**
+   * `SESSION_HUB_PALETTE=1` prints every numeric theme token with its hex value
+   * inside the browser. It exists because the harness colours have to be distinct
+   * *in the theme the user is running*, and no amount of reading the theme file
+   * tells you that: the tokens have to be measured.
+   */
+  const paletteDump = (): string[] => {
+    if (process.env.SESSION_HUB_PALETTE?.trim() !== "1") return []
+    const current = theme() as unknown as Record<string, unknown>
+    return Object.keys(current)
+      .filter((key) => typeof current[key] === "number")
+      .map((key) => {
+        const value = current[key] as number
+        const hex = "#" + value.toString(16).padStart(8, "0").slice(-6)
+        return `${key}=${hex}`
+      })
+      .slice(0, 40)
+  }
+
   const paneBorder = (which: "list" | "preview") =>
     store.pane() === which ? theme().borderActive : theme().borderSubtle
 
@@ -1218,6 +1256,9 @@ const HubView = (props: { api: TuiPluginApi; store: HubStore }) => {
           frame().usable,
         )}
       />
+      <Show when={paletteDump().length > 0}>
+        <For each={paletteDump()}>{(line) => <text fg={theme().textMuted}>{line}</text>}</For>
+      </Show>
       <Show when={store.searching() || store.text().trim().length > 0}>
         <Line
           theme={theme()}
