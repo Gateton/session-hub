@@ -1,0 +1,40 @@
+{
+  "name": "session-hub",
+  "version": "0.1.0",
+  "description": "Continue work you left in another coding agent. Find a session from Claude Code, Codex, OpenCode, Crush, JCode or Pi, import its context into the agent you are using now, and reopen it where it lives.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Gateton",
+  "bin": {
+    "sessionhub": "bin/sessionhub.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "test": "node test/acceptance.mjs",
+    "hub": "node bin/sessionhub.mjs",
+    "mcp": "node mcp/server.mjs"
+  },
+  "files": [
+    "bin",
+    "core",
+    "mcp",
+    "integrations",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "claude-code",
+    "codex",
+    "opencode",
+    "crush",
+    "jcode",
+    "pi",
+    "sessions",
+    "resume",
+    "handoff",
+    "context",
+    "mcp"
+  ]
+}
