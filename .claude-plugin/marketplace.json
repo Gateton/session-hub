@@ -1,0 +1,29 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "session-hub",
+  "description": "session-hub: continue work you left in another coding agent. Find a session from Codex, OpenCode, Crush, JCode or Pi, bring its context into the conversation you are in, and reopen it where it lives.",
+  "owner": {
+    "name": "Gateton"
+  },
+  "plugins": [
+    {
+      "name": "session-hub",
+      "source": "./integrations/claude",
+      "displayName": "session-hub",
+      "description": "Continue work you left in another coding agent. Finds sessions from Codex, OpenCode, Crush, JCode, Pi and other Claude Code projects, brings the one you pick into this conversation, and says how to reopen it where it lives.",
+      "author": {
+        "name": "Gateton"
+      },
+      "license": "MIT",
+      "category": "productivity",
+      "tags": [
+        "sessions",
+        "handoff",
+        "resume",
+        "context",
+        "mcp",
+        "cross-agent"
+      ]
+    }
+  ]
+}

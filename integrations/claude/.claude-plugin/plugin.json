@@ -1,0 +1,18 @@
+{
+  "name": "session-hub",
+  "displayName": "session-hub",
+  "version": "0.1.0",
+  "description": "Continue work you left in another coding agent. Finds sessions from Codex, OpenCode, Crush, JCode, Pi and other Claude Code projects, brings the one you pick into this conversation, and says how to reopen it where it lives.",
+  "author": {
+    "name": "Gateton"
+  },
+  "license": "MIT",
+  "keywords": [
+    "sessions",
+    "handoff",
+    "resume",
+    "context",
+    "mcp",
+    "cross-agent"
+  ]
+}

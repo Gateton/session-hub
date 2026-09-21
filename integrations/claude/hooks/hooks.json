@@ -1,0 +1,30 @@
+{
+  "description": "session-hub: deliver the session the user picked as context, and vendor the hub on first run",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/sessionhub-hook.mjs"],
+            "timeout": 30,
+            "statusMessage": "session-hub: checking for a session you picked"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/sessionhub-hook.mjs"],
+            "timeout": 25
+          }
+        ]
+      }
+    ]
+  }
+}
