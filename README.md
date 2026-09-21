@@ -62,7 +62,10 @@ node ~/session-hub/bin/sessionhub.mjs setup      # record where the hub lives
 export PATH="$HOME/session-hub/bin:$PATH"        # optional, for the bare command
 ```
 
-Then install the integration for the agent you use.
+Then install the integration for the agent you use. In every command below,
+`/path/to/session-hub` means the directory you cloned into (on this machine it is
+`/home/gateton/Projects/session-hub`); it is a real path, not a placeholder to
+paste verbatim.
 
 ### Claude Code
 

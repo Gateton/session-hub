@@ -35,6 +35,8 @@ explain yourself again.
 
 ### From this checkout
 
+Substitute the directory you actually cloned into for `/path/to/session-hub`:
+
 ```bash
 codex plugin marketplace add /path/to/session-hub
 codex plugin add session-hub@session-hub
