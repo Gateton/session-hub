@@ -236,7 +236,16 @@ function segWidth(segments: Seg[]): number {
   return segments.reduce((total, segment) => total + segment.text.length, 0)
 }
 
-/** Resolve a piece to a colour for the current theme and row state. */
+/**
+ * Resolve a piece to a colour for the current theme and row state.
+ *
+ * A selected row keeps its normal foregrounds. The tempting move is to swap them
+ * for `selectedListItemText`, but that token belongs to the host's own selection
+ * rendering, which paints its own background behind it; on this row's
+ * `backgroundElement` it reads as washed-out text that does not match its
+ * neighbours. Selection is carried by the background and the accent bar instead,
+ * so the harness hue and the metadata stay legible and consistent.
+ */
 function colorFor(theme: TuiThemeCurrent, segment: Seg, selected: boolean) {
   if (segment.color === "harness") {
     const style = styleFor(segment.harness)
@@ -244,8 +253,8 @@ function colorFor(theme: TuiThemeCurrent, segment: Seg, selected: boolean) {
   }
   if (segment.color === "accent") return theme.accent
   if (segment.color === "warning") return theme.warning
-  if (segment.color === "text") return selected ? theme.selectedListItemText : theme.text
-  return selected ? theme.selectedListItemText : theme.textMuted
+  if (segment.color === "text") return theme.text
+  return theme.textMuted
 }
 
 /**
@@ -780,9 +789,12 @@ const Row = (props: {
           {(segment) => <text fg={colorFor(props.theme, segment, props.selected)}>{segment.text}</text>}
         </For>
       </box>
-      <text fg={props.selected ? props.theme.selectedListItemText : props.theme.textMuted}>
-        {`  ${title()}`}
-      </text>
+      <box flexDirection="row">
+        {/* The bar continues on the title line, so the selection reads as one block
+            instead of a single highlighted line with a stray edge. */}
+        <text fg={props.theme.accent}>{props.selected ? "\u258c " : "  "}</text>
+        <text fg={props.selected ? props.theme.text : props.theme.textMuted}>{title()}</text>
+      </box>
     </box>
   )
 }
