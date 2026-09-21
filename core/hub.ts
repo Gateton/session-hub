@@ -74,11 +74,16 @@ export class Hub {
   readonly home: string;
   readonly indexPath: string;
   private handle!: IndexHandle;
+  /** Set when the index is read-only, with the reason to show the user. */
+  private readOnlyNote: string | null = null;
   private readonly registry: AdapterRegistry;
   private readonly maxPerHarness: number;
   private lastScanAt = 0;
 
   private constructor(home: string, handle: IndexHandle, maxPerHarness: number) {
+    this.readOnlyNote = handle.readOnly
+      ? "this environment cannot write the hub index, so results come from the last scan"
+      : null;
     this.home = home;
     this.indexPath = path.join(home, "index.sqlite");
     this.handle = handle;
@@ -102,6 +107,19 @@ export class Hub {
     return new Hub(home, handle, opts.maxPerHarness ?? 2000);
   }
 
+  /**
+   * True when the index could only be opened for reading, so a scan is refused
+   * and results come from the last successful one.
+   */
+  isReadOnly(): boolean {
+    return this.handle.readOnly;
+  }
+
+  /** A one-line explanation of the read-only state, or null when writing works. */
+  readOnlyReason(): string | null {
+    return this.readOnlyNote;
+  }
+
   /** Adapters, in fixed order. */
   adapters(): SessionAdapter[] {
     return this.registry.all();
@@ -117,6 +135,14 @@ export class Hub {
    * store must not take the others down.
    */
   async refresh(force = false, onProgress?: ScanOptions["onProgress"]): Promise<ScanResult> {
+    if (this.handle.readOnly) {
+      // Refuse clearly. A raw "attempt to write a readonly database" tells the
+      // user nothing about which directory to fix.
+      throw new HubReadError(
+        `the index at ${this.indexPath} is read-only here, so it cannot be rescanned. ` +
+          `Searches still use the last scan. Grant write access to ${this.home}, or set SESSION_HUB_HOME somewhere writable.`,
+      );
+    }
     const result = await scan(this.handle, this.registry, {
       force,
       maxPerHarness: this.maxPerHarness,
@@ -126,10 +152,31 @@ export class Hub {
     return result;
   }
 
-  /** Run a scan on first use, then reuse the index. */
+  /**
+   * Run a scan on first use, then reuse the index.
+   *
+   * A read-only index is not an error here: the queries that matter (search,
+   * context, native) only read, and a sandbox that denies writes should still
+   * answer. The reason is recorded so a front end can pass it on.
+   */
   async ensureFresh(maxAgeMs = 15_000): Promise<void> {
     if (this.lastScanAt && Date.now() - this.lastScanAt < maxAgeMs) return;
-    await this.refresh(false);
+    if (this.handle.readOnly) {
+      this.readOnlyNote =
+        "this environment cannot write the hub index, so results come from the last scan";
+      this.lastScanAt = Date.now();
+      return;
+    }
+    try {
+      await this.refresh(false);
+    } catch (err) {
+      if (this.handle.readOnly) {
+        this.readOnlyNote = err instanceof Error ? err.message : String(err);
+        this.lastScanAt = Date.now();
+        return;
+      }
+      throw err;
+    }
   }
 
   list(limit = 2000): ExternalSession[] {
@@ -275,6 +322,23 @@ export class Hub {
       );
     }
     return rows[0];
+  }
+
+  /**
+   * Is this uid in the index at all?
+   *
+   * The difference matters for an armed selection: a session that is gone can
+   * never be delivered, so the pick is cleared and the user is told once. A
+   * session that exists but cannot be read right now keeps its pick, because a
+   * retry may work.
+   */
+  exists(uid: string): boolean {
+    try {
+      if (this.handle.db.get("select 1 as one from sessions where uid = ?", [uid])) return true;
+      return Boolean(this.findByPrefix(uid));
+    } catch {
+      return false;
+    }
   }
 
   async get(uid: string): Promise<SessionDetail | null> {

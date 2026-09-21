@@ -7,9 +7,10 @@
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { ExternalSession, HarnessId, SessionDetail } from "../types.ts";
-import { exec, openIndexDb, type ReadOnlyDb } from "../sqlite.ts";
+import { exec, openIndexDb, openIndexDbReadOnly, type ReadOnlyDb } from "../sqlite.ts";
 
 export const SCHEMA_VERSION = "1";
 
@@ -35,6 +36,12 @@ export interface IndexedSessionRow {
 export interface IndexHandle {
   db: ReadOnlyDb;
   close(): void;
+  /**
+   * True when the index could only be opened read-only (a sandbox, a read-only
+   * filesystem, a missing home). Queries still work; scanning does not, and the
+   * front ends say so instead of failing.
+   */
+  readOnly: boolean;
 }
 
 const SCHEMA = [
@@ -90,30 +97,98 @@ export async function openIndex(dbPath: string): Promise<IndexHandle | null> {
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   } catch {
-    return null;
+    /* a read-only home is handled below, not here */
   }
-  const db = await openIndexDb(dbPath);
-  if (!db) return null;
-  // WAL plus relaxed fsync keeps bulk indexing fast without risking corruption
-  // for a rebuildable cache. If the index is lost, it is simply rescanned.
-  exec(db, "PRAGMA journal_mode = WAL");
-  exec(db, "PRAGMA synchronous = NORMAL");
-  for (const sql of SCHEMA) exec(db, sql);
-  exec(db, `INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)`, [
-    SCHEMA_VERSION,
-  ]);
-  // Drop any FTS rows whose session no longer exists. REPLACE on the sessions
-  // table allocates a fresh rowid, so orphans accumulate without this sweep.
-  exec(
-    db,
-    "DELETE FROM search WHERE uid NOT IN (SELECT uid FROM sessions)",
-  );
+
+  // Preferred path: a writable index, with the schema in place and WAL on.
+  const writable = await openIndexDb(dbPath);
+  if (writable) {
+    try {
+      exec(writable, "PRAGMA journal_mode = WAL");
+      exec(writable, "PRAGMA synchronous = NORMAL");
+      for (const sql of SCHEMA) exec(writable, sql);
+      exec(writable, `INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)`, [
+        SCHEMA_VERSION,
+      ]);
+      // Drop any FTS rows whose session no longer exists. REPLACE on the sessions
+      // table allocates a fresh rowid, so orphans accumulate without this sweep.
+      exec(writable, "DELETE FROM search WHERE uid NOT IN (SELECT uid FROM sessions)");
+      return {
+        db: writable,
+        readOnly: false,
+        close() {
+          writable.close();
+        },
+      };
+    } catch {
+      // The file opened but cannot be written: that is what a sandbox or a
+      // read-only directory looks like. Fall through to reading it instead of
+      // failing every query.
+      writable.close();
+    }
+  }
+
+  const readOnly = await openIndexForReading(dbPath);
+  if (!readOnly) return null;
   return {
-    db,
+    db: readOnly,
+    readOnly: true,
     close() {
-      db.close();
+      readOnly.close();
     },
   };
+}
+
+/**
+ * Open the index for reading only, in an environment that denies writes.
+ *
+ * Two mechanisms, because neither is enough alone:
+ *  - `readOnly: true` works for a rollback-journal database, and fails for a
+ *    WAL one, which needs write access to its -shm sidecar.
+ *  - when that fails, the database is copied to the OS temp directory and read
+ *    from there. The copy is disposable and the user's hub home stays untouched,
+ *    which is the point of the exercise.
+ */
+async function openIndexForReading(dbPath: string): Promise<ReadOnlyDb | null> {
+  const direct = await openIndexDbReadOnly(dbPath);
+  if (direct && hasSchema(direct)) return direct;
+  direct?.close();
+
+  const copy = copyIndexToTemp(dbPath);
+  if (!copy) return null;
+  const fromCopy = await openIndexDbReadOnly(copy);
+  if (fromCopy && hasSchema(fromCopy)) return fromCopy;
+  fromCopy?.close();
+  return null;
+}
+
+function hasSchema(db: ReadOnlyDb): boolean {
+  try {
+    db.get("select count(*) as n from sessions");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Copy index.sqlite (and its sidecars, so a WAL that has not been checkpointed
+ * comes along) into the temp directory. Returns the new path, or null.
+ */
+function copyIndexToTemp(dbPath: string): string | null {
+  try {
+    if (!fs.existsSync(dbPath)) return null;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-hub-index-"));
+    const target = path.join(dir, "index.sqlite");
+    fs.copyFileSync(dbPath, target);
+    for (const suffix of ["-wal", "-shm"]) {
+      const sidecar = `${dbPath}${suffix}`;
+      if (fs.existsSync(sidecar)) fs.copyFileSync(sidecar, `${target}${suffix}`);
+    }
+    return target;
+  } catch {
+    return null;
+  }
 }
 
 /** Run a batch of writes inside one transaction. */

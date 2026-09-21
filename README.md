@@ -215,6 +215,12 @@ one directory under `integrations/`.
   the end of each conversation), not the entire history of a very long session.
 - Reading a WAL-mode SQLite database can update its `-shm` sidecar. That file
   holds no session data; the database itself is never modified.
+- **In a sandbox that denies writes** (Codex runs commands under one by default),
+  the hub cannot rescan and says so. Searches and context still work from the last
+  scan: the index is read read-only, or from a copy in the temp directory when
+  SQLite needs write access to a WAL sidecar.
+- **Installed plugins use the staged copy**, not your checkout. After changing the
+  code, run the installer again to restage it.
 
 ## Development
 

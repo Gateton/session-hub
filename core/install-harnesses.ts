@@ -45,6 +45,8 @@ export interface InstallOptions {
   only?: string[];
   dryRun?: boolean;
   timeoutMs?: number;
+  /** Set Codex's bypass_hook_trust instead of asking the user to use /hooks. */
+  trustCodexHooks?: boolean;
 }
 
 /**
@@ -88,13 +90,26 @@ const TARGETS = [
   },
 ];
 
+/**
+ * Find the harness's executable on PATH.
+ *
+ * Existence is not enough: a directory or a non-executable file named `claude`
+ * would be detected, offered to the user, and then fail at every step. The
+ * candidate has to be a file we can actually run.
+ */
 function onPath(binary: string): string | null {
+  const extensions =
+    process.platform === "win32" ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";") : [""];
   for (const dir of (process.env.PATH ?? "").split(path.delimiter).filter(Boolean)) {
-    const candidate = path.join(dir, binary);
-    try {
-      if (fs.existsSync(candidate)) return candidate;
-    } catch {
-      /* unreadable PATH entry, keep looking */
+    for (const extension of extensions) {
+      const candidate = path.join(dir, `${binary}${extension}`);
+      try {
+        if (!fs.statSync(candidate).isFile()) continue;
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return candidate;
+      } catch {
+        /* not there, not a file, or not executable: keep looking */
+      }
     }
   }
   return null;
@@ -227,6 +242,20 @@ export function installIntegrations(opts: InstallOptions): HarnessInstallResult[
     }
     result.detected = true;
 
+    // Codex refuses to run any of its own commands when CODEX_HOME does not
+    // exist yet ("failed to resolve CODEX_HOME"), which is exactly the state of a
+    // fresh machine that just installed the CLI. Creating it is Codex's own job
+    // on first run, so doing it here is safe and keeps the install from failing
+    // before it starts.
+    if (target.harness === "codex" && !opts.dryRun) {
+      const codexHome = process.env.CODEX_HOME?.trim() || path.join(process.env.HOME ?? "", ".codex");
+      try {
+        fs.mkdirSync(codexHome, { recursive: true });
+      } catch {
+        /* if this fails, the steps below report it */
+      }
+    }
+
     const integrationDir = path.join(opts.root, target.integration);
     if (!opts.dryRun && !fs.existsSync(integrationDir)) {
       result.skipped = `no integration directory at ${integrationDir}`;
@@ -287,12 +316,15 @@ export function installIntegrations(opts: InstallOptions): HarnessInstallResult[
       const installer = path.join(integrationDir, "scripts", "install-hooks.mjs");
       const stepsOk = result.steps.every((s) => s.ok);
       if (stepsOk && fs.existsSync(installer)) {
-        const printable = `node ${installer}`;
+        const trustArgs = opts.trustCodexHooks ? ["--trust"] : [];
+        const printable = `node ${installer}${trustArgs.length ? " --trust" : ""}`;
         if (opts.dryRun) result.steps.push({ command: printable, ok: true, output: "(dry run)" });
-        else result.steps.push(run(process.execPath, [installer], timeoutMs));
-        result.manual =
-          "Codex: run /hooks once and trust the session-hub entries. Until then the tools and the skill work, " +
-          "but a session you pick is not delivered automatically.";
+        else result.steps.push(run(process.execPath, [installer, ...trustArgs], timeoutMs));
+        result.manual = opts.trustCodexHooks
+          ? "Codex: the delivery hooks were set to run without the trust prompt (bypass_hook_trust = true in your config.toml). " +
+              "That applies to every hook in that file; remove the line to go back to trusting them by hand in /hooks."
+          : "Codex: run /hooks once and trust the session-hub entries. Until then the tools and the skill work, " +
+              "but a session you pick is not delivered automatically.";
       } else if (!stepsOk) {
         result.manual = "Fix the failing step above, then run: node integrations/codex/scripts/install-hooks.mjs";
       }

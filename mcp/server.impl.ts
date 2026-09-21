@@ -32,9 +32,17 @@ interface JsonRpc {
   error?: { code: number; message: string; data?: unknown };
 }
 
+const READ_ONLY = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
+
 const TOOLS = [
   {
     name: "search",
+    annotations: { title: "Search coding-agent sessions", ...READ_ONLY },
     description:
       "Find coding-agent sessions from any harness on this machine (Claude Code, Codex, OpenCode, Crush, JCode, Pi). " +
       "Use this when the user refers to work done elsewhere: 'continue what I did in Codex', 'the session where we fixed X', " +
@@ -64,6 +72,7 @@ const TOOLS = [
   },
   {
     name: "context",
+    annotations: { title: "Import a session's conversation", ...READ_ONLY },
     description:
       "Load one session's conversation into this conversation, so the user does not have to re-explain it. " +
       "This is the tool for 'continue the work I left in another agent': pick a uid from `search`, call this, and the " +
@@ -80,6 +89,7 @@ const TOOLS = [
   },
   {
     name: "native",
+    annotations: { title: "Reopen a session in its own agent", ...READ_ONLY },
     description:
       "Get the verified command that reopens a session in the harness that owns it (for example `codex resume <id>`). " +
       "Use when the user wants to go back to where that work lives rather than continue it here. Never invents a command: " +
@@ -142,6 +152,12 @@ function formatHit(s: {
 async function callTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
   const h = await ready();
 
+  // A sandbox that denies writes to the hub home is not a failure: the answers
+  // still come from the last scan. Say so instead of letting the model guess why
+  // something looks stale.
+  const note = h.readOnlyReason();
+  const prefix = note ? `note: ${note}\n\n` : "";
+
   if (name === "search") {
     const query = typeof args.query === "string" ? args.query.trim() : "";
     // No query and no dir means "what was I doing in this project", so the
@@ -177,7 +193,8 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<Re
           ? `Showing ${shown.length} of ${filtered.length} session(s) for ${scope}:`
           : `${filtered.length} session(s) for ${scope}:`;
       return textResult(
-        `${heading}\n\n` +
+        prefix +
+          `${heading}\n\n` +
           shown.map(formatHit).join("\n\n") +
           `\n\nLoad one with the \`context\` tool and its uid.`,
       );
@@ -191,7 +208,8 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<Re
       );
     }
     return textResult(
-      `${hits.length} match(es)${query ? ` for "${query}"` : ""}:\n\n` +
+      prefix +
+        `${hits.length} match(es)${query ? ` for "${query}"` : ""}:\n\n` +
         hits.map((x) => formatHit(x.session)).join("\n\n") +
         `\n\nLoad one with the \`context\` tool and its uid.`,
     );

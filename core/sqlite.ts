@@ -163,6 +163,43 @@ export async function openIndexDb(file: string): Promise<ReadOnlyDb | null> {
   return wrap(db as never, "index");
 }
 
+/**
+ * Open the hub's index without write access.
+ *
+ * Sandboxed harnesses (Codex runs commands under a read-only policy by default)
+ * deny writes anywhere but the workspace, so the usual read-write open of
+ * ~/.session-hub/index.sqlite fails and every query fails with it. Reading is all
+ * that `search`, `context` and `native` need, so this keeps those working: the
+ * index is opened read-only and scanning is refused with a clear message instead
+ * of a raw SQLite error.
+ */
+export async function openIndexDbReadOnly(file: string): Promise<ReadOnlyDb | null> {
+  let mod: SqliteModule;
+  try {
+    mod = await loadSqlite();
+  } catch {
+    return null;
+  }
+  let db: InstanceType<SqliteModule["DatabaseSync"]>;
+  try {
+    db = new mod.DatabaseSync(file, { readOnly: true });
+  } catch {
+    return null;
+  }
+  try {
+    db.exec("PRAGMA busy_timeout = 5000");
+  } catch {
+    /* non-fatal */
+  }
+  const inner = wrap(db as never, "index (read-only)");
+  return {
+    ...inner,
+    run(sql: string): void {
+      throw new Error(`refusing to write to a read-only index: ${sql}`);
+    },
+  };
+}
+
 /** Run a statement on the index DB. Throws on failure so bugs are not silent. */
 export function exec(handle: ReadOnlyDb, sql: string, params: unknown[] = []): void {
   handle.run(sql, params);

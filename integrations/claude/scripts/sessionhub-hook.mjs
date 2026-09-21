@@ -43,6 +43,10 @@ const PEEK_TIMEOUT_MS = 5_000;
 const TAKE_TIMEOUT_MS = 15_000;
 const VENDOR_MARKER = ".sessionhub-vendor-attempted";
 
+function oneLine(text) {
+  return String(text).replace(/\s+/g, " ").trim().slice(0, 300);
+}
+
 function debug(message) {
   if (process.env.SESSIONHUB_DEBUG) process.stderr.write(`[session-hub] ${message}\n`);
 }
@@ -214,13 +218,29 @@ async function main() {
     pluginRoot: PLUGIN_ROOT,
     timeoutMs: TAKE_TIMEOUT_MS,
   });
+  // A pick that does not arrive is the one thing worth breaking silence for: the
+  // user asked for it, and silence looks like the feature is broken. The notice
+  // goes into additionalContext so the model can tell them what to do next.
   if (!taken.ok) {
     debug(`take failed: ${taken.error}`);
+    emit(
+      event,
+      `[session-hub] The conversation you picked could not be loaded, so nothing was imported. ` +
+        `${oneLine(taken.error ?? "no reason reported")} ` +
+        `Nothing else was read.`,
+    );
     return;
   }
 
   const text = taken.data?.text;
-  if (typeof text !== "string" || text.trim() === "") return;
+  if (typeof text !== "string" || text.trim() === "") {
+    emit(
+      event,
+      `[session-hub] A session was marked for import (${selection.uid ?? "unknown"}) but the hub had nothing to hand over, ` +
+        `most likely because it had already been delivered. Nothing was imported twice.`,
+    );
+    return;
+  }
   emit(event, fitToHookLimit(text, selection.uid ?? ""));
 }
 

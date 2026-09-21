@@ -92,9 +92,63 @@ function entriesFor(event) {
     );
 }
 
+/**
+ * Set (or remove) `bypass_hook_trust` in the Codex config.
+ *
+ * Codex refuses to run hooks it has not been told to trust, and the trust step
+ * lives in the `/hooks` dialog, which cannot be automated. This key is the
+ * documented override that skips it. It applies to every hook in that config, not
+ * just ours, so it is opt-in and says so.
+ *
+ * TOML detail: a bare key after a `[table]` header belongs to that table, so the
+ * key is written above the first table (or updated in place if it is already
+ * there, wherever it lives).
+ */
+function setBypassTrust(enabled) {
+  const configFile = path.join(codexHome, "config.toml");
+  let text = "";
+  let existed = false;
+  if (fs.existsSync(configFile)) {
+    existed = true;
+    text = fs.readFileSync(configFile, "utf8");
+  }
+
+  const lines = text.split("\n");
+  const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
+  const head = firstTable === -1 ? lines.slice() : lines.slice(0, firstTable);
+  const tail = firstTable === -1 ? [] : lines.slice(firstTable);
+
+  const keyPattern = /^\s*bypass_hook_trust\s*=/;
+  const at = head.findIndex((line) => keyPattern.test(line));
+
+  if (!enabled) {
+    if (at === -1) return null;
+    head.splice(at, 1);
+  } else if (at === -1) {
+    head.unshift("bypass_hook_trust = true");
+  } else {
+    head[at] = "bypass_hook_trust = true";
+  }
+
+  const next = [...head, ...tail].join("\n");
+  if (existed && next === text) return null;
+  if (existed) fs.copyFileSync(configFile, `${configFile}.session-hub-${Date.now()}.bak`);
+  fs.writeFileSync(configFile, next, "utf8");
+  return configFile;
+}
+
 const events = ["SessionStart", "UserPromptSubmit"];
 const before = JSON.stringify(config);
 const report = [];
+
+let trustNote = null;
+if (has("--trust") || has("--no-trust")) {
+  const enabled = has("--trust");
+  const written = setBypassTrust(enabled);
+  trustNote = written
+    ? `bypass_hook_trust ${enabled ? "enabled" : "removed"} in ${written}`
+    : `bypass_hook_trust ${enabled ? "already enabled" : "was not set"}`;
+}
 
 if (has("--remove")) {
   for (const event of events) {
@@ -136,7 +190,8 @@ const after = JSON.stringify(config);
 const changed = before !== after;
 
 if (!changed) {
-  console.log(`nothing to do: ${hooksFile} already reflects this plugin (${hookScript})`);
+  if (trustNote) console.log(`session-hub: ${trustNote}`);
+  else console.log(`nothing to do: ${hooksFile} already reflects this plugin (${hookScript})`);
   process.exit(0);
 }
 
@@ -160,10 +215,13 @@ try {
 
 console.log(`wrote ${hooksFile}`);
 for (const line of report) console.log(`  - ${line}`);
+if (trustNote) console.log(`  - ${trustNote}`);
 console.log(
   [
     "",
-    "Next: run /hooks in Codex and trust the session-hub entries once.",
+    trustNote && has("--trust")
+      ? "Codex will now run these hooks without asking (bypass_hook_trust = true)."
+      : "Next: run /hooks in Codex and trust the session-hub entries once.",
     "Until you do, the tools and the skill work but a picked session is not delivered",
     "automatically. Undo at any time with:",
     "",

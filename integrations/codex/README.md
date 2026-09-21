@@ -75,6 +75,25 @@ codex plugin marketplace list           # where Codex thinks the root is
 codex mcp list                          # a server called `hub`
 ```
 
+## Trust the hooks (or skip the step)
+
+Codex will not run these hooks until you tell it to, and that happens in its
+`/hooks` dialog. That is the default and the safest choice.
+
+If you would rather not do it by hand, the same script that installs the hooks can
+set Codex's own override:
+
+```bash
+node scripts/install-hooks.mjs --trust    # writes bypass_hook_trust = true into $CODEX_HOME/config.toml
+node scripts/install-hooks.mjs --no-trust # removes it again
+```
+
+It writes the line above the first TOML table, backs the file up first, and does
+nothing the second time. Be aware of what it means: `bypass_hook_trust` applies to
+**every** hook in that configuration file, not only session-hub's. The installer
+asks before doing this, and `sessionhub install --trust-hooks` / `--no-trust-hooks`
+answer it in advance.
+
 ## Trust the hooks
 
 Hooks that come from a plugin are not trusted automatically. Codex discovers

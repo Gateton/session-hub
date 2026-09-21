@@ -21,6 +21,59 @@ export interface SelectableTarget {
 }
 
 /**
+ * A yes/no question, defaulting to no.
+ *
+ * Used where the safe answer is also the recommended one, so pressing Enter never
+ * changes anything on the machine.
+ */
+export async function askYesNo(question: string, detail?: string): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const queued: string[] = [];
+  let waiting: ((line: string) => void) | null = null;
+  let ended = false;
+  rl.on("line", (line) => {
+    if (waiting) {
+      const resolve = waiting;
+      waiting = null;
+      resolve(line);
+    } else queued.push(line);
+  });
+  rl.on("close", () => {
+    ended = true;
+    if (waiting) {
+      const resolve = waiting;
+      waiting = null;
+      resolve("");
+    }
+  });
+  const ask = (text: string): Promise<string> => {
+    process.stdout.write(text);
+    const ready = queued.shift();
+    if (ready !== undefined) {
+      process.stdout.write(`${ready}\n`);
+      return Promise.resolve(ready.trim());
+    }
+    if (ended) return Promise.resolve("");
+    return new Promise((resolve) => {
+      waiting = resolve;
+    });
+  };
+
+  try {
+    if (detail) process.stdout.write(`${detail}\n`);
+    for (;;) {
+      const answer = (await ask(`${question} [y/N] `)).toLowerCase();
+      if (answer === "") return false;
+      if (answer === "y" || answer === "yes") return true;
+      if (answer === "n" || answer === "no") return false;
+      process.stdout.write('Answer "y" or "n".\n');
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+/**
  * Show the detected agents and return the ones the user picked.
  *
  * Accepts "1", "1,3", "1 3", "a" for all, "n" for none, and re-asks on anything

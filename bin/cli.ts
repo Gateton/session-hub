@@ -19,7 +19,7 @@ import process from "node:process";
 import { Hub, HubReadError, hubHome } from "../core/hub.ts";
 import { looksLikeRoot, packageRoot, readOwnVersion, vendorInto, writeInstallRecord } from "../core/install.ts";
 import { INSTALLABLE, anyFailed, detectTargets, installIntegrations } from "../core/install-harnesses.ts";
-import { askSelection } from "../core/prompt.ts";
+import { askSelection, askYesNo } from "../core/prompt.ts";
 import { installCliOnPath, stageHub } from "../core/install.ts";
 import { HARNESS_LABEL, HARNESS_ORDER, type ExternalSession, type HarnessId } from "../core/types.ts";
 import { formatNativeResume } from "../core/native.ts";
@@ -54,6 +54,8 @@ Options:
   --only <list>    With install: comma-separated claude-code,codex,opencode
   --in-place       With install: use this directory instead of staging a copy
   --all            With install: install into every agent found, without asking
+  --trust-hooks    With install: set Codex's bypass_hook_trust instead of /hooks
+  --no-trust-hooks With install: never touch Codex's hook trust setting
   --dry-run        Show what install would run, without running it
   --deep           Search full transcripts instead of the indexed excerpt
   --max <n>        Sessions to read in --deep mode (default 400)
@@ -174,7 +176,13 @@ async function withHub<T>(fn: (hub: Hub) => Promise<T>, home?: string): Promise<
 
 /** Every command accepts --home so tests and scripts never need environment plumbing. */
 function command(args: Args, fn: (hub: Hub) => Promise<void>): Promise<void> {
-  return withHub(fn, flagStr(args, "home"));
+  return withHub(async (hub) => {
+    await fn(hub);
+    // A read-only index is worth one line on stderr: the answers are real, they
+    // are just not fresh, and the user is the one who can fix it.
+    const note = hub.readOnlyReason();
+    if (note && !flagBool(args, "json")) process.stderr.write(`note: ${note}\n`);
+  }, flagStr(args, "home"));
 }
 
 const commands: Record<string, (args: Args) => Promise<void>> = {
@@ -227,6 +235,7 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
       die(`cannot find the hub at ${root}. Run this from an unpacked session-hub package.`);
     }
     const dryRun = flagBool(args, "dry-run");
+    let trustCodexHooks = flagBool(args, "trust-hooks") && !flagBool(args, "no-trust-hooks");
 
     // Choosing where to install is the user's call, so when nothing was specified
     // and there is a person at the keyboard, ask. --only and --all keep it
@@ -283,6 +292,30 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
         return;
       }
     }
+    // Codex will not run the delivery hooks until a person trusts them in /hooks,
+    // and that dialog cannot be automated. Codex does have bypass_hook_trust, so
+    // the safe choice is offered first and the override second.
+    if (!dryRun && !flagBool(args, "trust-hooks") && only?.includes("codex") && !flagBool(args, "no-trust-hooks")) {
+      const interactive =
+        (process.stdin.isTTY && process.stdout.isTTY) || process.env.SESSION_HUB_FORCE_TTY === "1";
+      if (interactive) {
+        trustCodexHooks = await askYesNo(
+          "Set bypass_hook_trust in Codex so its hooks run without the /hooks step?",
+          [
+            "Codex refuses to run hooks you have not trusted, and trusting them happens in its",
+            "/hooks dialog, which cannot be automated. Answering yes writes this line into",
+            "~/.codex/config.toml:",
+            "",
+            "  bypass_hook_trust = true",
+            "",
+            "That applies to every hook in that file, not only session-hub. Saying no is fine:",
+            "run /hooks once instead. Until then the tools and the skill work, but a session you",
+            "pick is not delivered automatically.",
+          ].join("\n"),
+        );
+      }
+    }
+
     // Staging happens after the questions, so a cancelled install leaves nothing
     // behind: installers run from places that disappear (an npx cache, a moved
     // checkout), so the code is copied somewhere stable first.
@@ -295,7 +328,7 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
     // produce plugins that cannot answer anything.
     if (!dryRun) writeInstallRecord(installRoot);
 
-    const results = installIntegrations({ root: installRoot, only, dryRun });
+    const results = installIntegrations({ root: installRoot, only, dryRun, trustCodexHooks });
 
     const pathShim = dryRun ? null : installCliOnPath(path.join(installRoot, "bin", "sessionhub.mjs"));
 
@@ -305,6 +338,7 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
         installRoot,
         staged: staged.files,
         dryRun,
+        trustCodexHooks,
         cli: pathShim ? { file: pathShim.file, onPath: pathShim.onPath } : null,
         results,
       });
@@ -422,6 +456,18 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
     const taken = found.selection;
     await command(args, async (hub) => {
       await hub.ensureFresh();
+      // A session that is no longer in the index can never be delivered, so the
+      // pick is cleared and said out loud once. Anything else keeps the pick: a
+      // transient read failure may well work on the next turn.
+      if (!hub.exists(taken.uid)) {
+        clearPending();
+        process.stderr.write(
+          `pending session ${taken.uid} is not in the index any more, so nothing was injected and the selection has been cleared.\n`,
+        );
+        process.exitCode = 3;
+        return;
+      }
+
       const loaded = await hub.contextFor(taken.uid, { charBudget: taken.chars });
       if (!loaded) {
         process.stderr.write(

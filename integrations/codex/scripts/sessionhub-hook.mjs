@@ -152,7 +152,15 @@ async function main() {
   }
 
   const text = typeof take.data?.text === "string" ? take.data.text : "";
-  if (!text) return; // the hub read the selection but had no context to give
+  if (!text) {
+    // Armed but empty: say so rather than leaving the user wondering why the
+    // conversation never arrived.
+    warn(
+      `session-hub: a session was marked for import (${describe(armed)}) but the hub had nothing to hand over, ` +
+        `most likely because it had already been delivered.`,
+    );
+    return;
+  }
 
   emit(
     event,

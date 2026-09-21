@@ -568,6 +568,138 @@ if (process.platform === "win32") {
 check("the shim reports whether its directory is reachable", typeof shimResult?.onPath === "boolean", JSON.stringify(shimResult));
 fs.rmSync(fakeForShim, { recursive: true, force: true });
 
+process.stdout.write("\n6f. sandboxes, annotations, trust and detection\n");
+
+// Codex blocks MCP tools that do not declare themselves read-only, so the
+// annotations are part of the contract, not decoration.
+const mcpTools = spawnSync(
+  process.execPath,
+  [path.join(repoRoot, "mcp", "server.mjs"), "--home", hubHome],
+  {
+    input: `${[
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } },
+      { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    ]
+      .map((m) => JSON.stringify(m))
+      .join("\n")}\n`,
+    encoding: "utf8",
+    timeout: 120_000,
+  },
+);
+const toolsResponse = (mcpTools.stdout ?? "")
+  .trim()
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      return null;
+    }
+  })
+  .find((m) => m?.id === 2);
+const tools = toolsResponse?.result?.tools ?? [];
+check("tools declare themselves read-only", tools.length > 0 && tools.every((t) => t.annotations?.readOnlyHint === true), JSON.stringify(tools.map((t) => t.annotations)));
+check("tools carry a title", tools.every((t) => typeof t.annotations?.title === "string" && t.annotations.title.length > 3));
+
+// A sandbox that cannot write the hub home must still answer, because search and
+// context only read. Simulated by making the index directory unwritable.
+const roHome = tmpdir("readonly-home");
+const roEnv = { env: {}, home: roHome };
+run(["index", "--force"], roEnv);
+const roMode = fs.statSync(roHome).mode;
+try {
+  fs.chmodSync(roHome, 0o555);
+  const roSearch = run(["search", "turnero", "--limit", "2"], roEnv);
+  check("a read-only hub home still answers searches", roSearch.code === 0 && roSearch.stdout.length > 40, `exit ${roSearch.code}`);
+  check(
+    "the read-only state is explained on stderr",
+    /cannot write the hub index/.test(roSearch.stderr),
+    roSearch.stderr.slice(0, 120),
+  );
+  const roContext = run(["context", "opencode:ses_f5f0d04b7ffeAALNW1Awa8ipr5", "--chars", "4000"], roEnv);
+  check("a read-only hub home still returns real context", roContext.code === 0 && roContext.stdout.includes("detectarCambiosBox"), `exit ${roContext.code}`);
+  const roScan = run(["index", "--force"], roEnv);
+  check("a rescan is refused with a fixable message", roScan.code === 2 && /cannot be rescanned/.test(roScan.stderr), roScan.stderr.slice(0, 120));
+} finally {
+  fs.chmodSync(roHome, roMode);
+  fs.rmSync(roHome, { recursive: true, force: true });
+}
+
+// A pick that can never be delivered must be reported once and then cleared,
+// rather than nagging on every message or failing silently.
+const ghost = runJson(["pending", "--peek"], { env });
+if (ghost.data?.selection) run(["pending", "--clear"], { env });
+const pendingFile = path.join(hubHome, "pending.json");
+fs.writeFileSync(
+  pendingFile,
+  JSON.stringify({ uid: "ghost:not-a-session", harness: "codex", title: "ghost", chars: 2000, createdAt: new Date().toISOString() }),
+);
+const hookOnce = spawnSync(
+  process.execPath,
+  [path.join(repoRoot, "integrations", "claude", "scripts", "sessionhub-hook.mjs")],
+  {
+    input: `${JSON.stringify({ hook_event_name: "UserPromptSubmit", cwd: repoRoot, prompt: "hi" })}\n`,
+    encoding: "utf8",
+    timeout: 60_000,
+    env: { ...process.env, SESSION_HUB_ROOT: repoRoot, SESSION_HUB_HOME: hubHome },
+  },
+);
+check("an undeliverable pick says so instead of failing silently", /could not be loaded/.test(hookOnce.stdout), hookOnce.stdout.slice(0, 120));
+check("an undeliverable pick is cleared, so it is not reported again", !fs.existsSync(pendingFile));
+const hookTwice = spawnSync(
+  process.execPath,
+  [path.join(repoRoot, "integrations", "claude", "scripts", "sessionhub-hook.mjs")],
+  {
+    input: `${JSON.stringify({ hook_event_name: "UserPromptSubmit", cwd: repoRoot, prompt: "hi" })}\n`,
+    encoding: "utf8",
+    timeout: 60_000,
+    env: { ...process.env, SESSION_HUB_ROOT: repoRoot, SESSION_HUB_HOME: hubHome },
+  },
+);
+check("nothing is emitted once the pick is gone", hookTwice.stdout.trim() === "", `${hookTwice.stdout.length} bytes`);
+
+// The Codex trust override: written above the first table, idempotent, removable.
+const trustHome = tmpdir("trust-codex");
+fs.writeFileSync(path.join(trustHome, "config.toml"), 'model = "x"\n\n[projects."/tmp"]\ntrust_level = "trusted"\n');
+const trustScript = path.join(repoRoot, "integrations", "codex", "scripts", "install-hooks.mjs");
+const trustEnv = { ...process.env, CODEX_HOME: trustHome };
+const trustRun = spawnSync(process.execPath, [trustScript, "--trust"], { encoding: "utf8", timeout: 60_000, env: trustEnv });
+const trustToml = fs.readFileSync(path.join(trustHome, "config.toml"), "utf8");
+check("--trust enables bypass_hook_trust", trustRun.status === 0 && /^bypass_hook_trust = true$/m.test(trustToml), trustToml.slice(0, 80));
+check("the key lands above the first table", trustToml.indexOf("bypass_hook_trust") < trustToml.indexOf("[projects"), trustToml.split("\n").slice(0, 4).join(" | "));
+spawnSync(process.execPath, [trustScript, "--trust"], { encoding: "utf8", timeout: 60_000, env: trustEnv });
+check(
+  "--trust twice does not duplicate the key",
+  (fs.readFileSync(path.join(trustHome, "config.toml"), "utf8").match(/bypass_hook_trust/g) ?? []).length === 1,
+);
+spawnSync(process.execPath, [trustScript, "--no-trust"], { encoding: "utf8", timeout: 60_000, env: trustEnv });
+check("--no-trust removes it again", !/bypass_hook_trust/.test(fs.readFileSync(path.join(trustHome, "config.toml"), "utf8")));
+fs.rmSync(trustHome, { recursive: true, force: true });
+
+// Detection must ignore a directory, or a file that is not executable, named
+// like a harness: otherwise the installer offers something that cannot run.
+const fakeBin = tmpdir("fake-path");
+fs.mkdirSync(path.join(fakeBin, "claude"));
+fs.writeFileSync(path.join(fakeBin, "codex"), "not executable");
+const detected = spawnSync(
+  process.execPath,
+  [
+    "--experimental-strip-types",
+    "-e",
+    `import { detectTargets } from ${JSON.stringify(path.join(repoRoot, "core", "install-harnesses.ts"))};
+     console.log("DETECTED " + JSON.stringify(detectTargets().map((t) => t.binary)));`,
+  ],
+  { encoding: "utf8", timeout: 60_000, env: { ...process.env, PATH: fakeBin } },
+);
+const detectedList = JSON.parse((detected.stdout.match(/DETECTED (.*)/) ?? [])[1] ?? "[]");
+check(
+  "a directory or non-executable file is not offered as an agent",
+  !detectedList.includes("claude") && !detectedList.includes("codex"),
+  JSON.stringify(detectedList),
+);
+fs.rmSync(fakeBin, { recursive: true, force: true });
+
 process.stdout.write("\n7. the other project is untouched\n");
 if (fs.existsSync(path.join(OTHER_REPO, ".git"))) {
   const status = spawnSync("git", ["-C", OTHER_REPO, "status", "--porcelain"], { encoding: "utf8" });
