@@ -45,6 +45,8 @@ Options:
   --file <text>    Filter by a touched file path
   --limit <n>      Maximum rows (default 25 for lists, 300 for search)
   --chars <n>      Context budget in characters (default 40000)
+  --deep           Search full transcripts instead of the indexed excerpt
+  --max <n>        Sessions to read in --deep mode (default 400)
   --json           Machine-readable output
   --home <dir>     Hub home for the index (default ~/.session-hub)
   --force          Re-read every source, ignoring fingerprints
@@ -399,6 +401,48 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
     if (!query) die("usage: sessionhub search <query>");
     await command(args, async (hub) => {
       await hub.ensureFresh();
+
+      // Deep mode reads full transcripts instead of the indexed excerpt. It is
+      // slower and bounded, so the count of what it actually read is reported
+      // rather than implied.
+      if (flagBool(args, "deep")) {
+        const deep = await hub.deepSearch(query, {
+          harness: harnessFilter(args),
+          repo: flagStr(args, "repo"),
+          limit: flagNum(args, "limit") ?? 30,
+          maxSessions: flagNum(args, "max"),
+          onProgress: flagBool(args, "json")
+            ? undefined
+            : (done, total) => {
+                if (done % 25 === 0) process.stderr.write(`\r  read ${done}/${total} transcripts`);
+              },
+        });
+        if (!flagBool(args, "json")) process.stderr.write("\r".padEnd(40) + "\r");
+        if (flagBool(args, "json")) {
+          return json({
+            query,
+            scanned: deep.scanned,
+            truncated: deep.truncated,
+            hits: deep.hits.map((h) => ({ ...h.session, snippet: h.snippet })),
+          });
+        }
+        if (deep.hits.length === 0) {
+          return void process.stdout.write(
+            `no matches for "${query}" in ${deep.scanned} transcript(s).\n` +
+              (deep.truncated ? `Run again with --max ${deep.scanned * 2} to read more.\n` : ""),
+          );
+        }
+        process.stdout.write(
+          `${deep.hits.length} match(es) for "${query}" in full transcripts` +
+            ` (${deep.scanned} read${deep.truncated ? ", more available with --max" : ""}):\n\n` +
+            deep.hits
+              .map((h) => `${sessionRow(h.session, flagBool(args, "verbose"))}\n    …${h.snippet}…`)
+              .join("\n\n") +
+            `\n\nload one with:  sessionhub context <uid>\n`,
+        );
+        return;
+      }
+
       const hits = hub.search(query, {
         harness: harnessFilter(args),
         repo: flagStr(args, "repo"),
@@ -408,7 +452,9 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
       if (flagBool(args, "json")) return json(hits.map((h) => h.session));
       if (hits.length === 0) {
         if (flagBool(args, "json")) return json([]);
-        return void process.stdout.write(`no matches for "${query}"\n`);
+        return void process.stdout.write(
+          `no matches for "${query}" in the index. Try --deep to read full transcripts.\n`,
+        );
       }
       const verbose = flagBool(args, "verbose");
       process.stdout.write(

@@ -169,6 +169,71 @@ export class Hub {
     return rows.map(rowToSession);
   }
 
+  /**
+   * Search full transcripts, not just the indexed excerpt.
+   *
+   * The index samples 20k characters per session, which answers most questions
+   * quickly but can miss a phrase buried in the middle of a long conversation.
+   * This walks the newest candidates, loads each transcript through its adapter,
+   * and requires every term to appear. Bounded on purpose: it reports how many
+   * sessions it actually read, so a partial answer never looks complete.
+   */
+  async deepSearch(
+    query: string,
+    opts: {
+      harness?: HarnessId;
+      repo?: string;
+      limit?: number;
+      maxSessions?: number;
+      onProgress?: (done: number, total: number) => void;
+    } = {},
+  ): Promise<{ hits: { session: ExternalSession; snippet: string }[]; scanned: number; truncated: boolean }> {
+    const terms = query
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}_-]+/u)
+      .filter((t) => t.length > 2);
+    if (terms.length === 0) return { hits: [], scanned: 0, truncated: false };
+
+    const candidates = querySessions(this.handle, {
+      harness: opts.harness ?? null,
+      repo: opts.repo ?? null,
+      limit: opts.maxSessions ?? 400,
+    });
+    const hits: { session: ExternalSession; snippet: string }[] = [];
+    let scanned = 0;
+
+    for (const row of candidates) {
+      if (hits.length >= (opts.limit ?? 30)) break;
+      const adapter = this.registry.get(row.harness);
+      if (!adapter) continue;
+      let detail: SessionDetail | null = null;
+      try {
+        detail = await adapter.getSession(row.native_id);
+      } catch {
+        continue;
+      }
+      scanned++;
+      opts.onProgress?.(scanned, candidates.length);
+      if (!detail) continue;
+      const haystack = detail.messages
+        .map((m) => m.text)
+        .join("\n")
+        .toLowerCase();
+      if (!terms.every((t) => haystack.includes(t))) continue;
+      const at = haystack.indexOf(terms[0]);
+      const from = Math.max(0, at - 160);
+      const snippet = [...detail.messages]
+        .map((m) => m.text)
+        .join("\n")
+        .slice(from, from + 320)
+        .replace(/\s+/g, " ")
+        .trim();
+      hits.push({ session: rowToSession(row), snippet });
+    }
+
+    return { hits, scanned, truncated: scanned < candidates.length };
+  }
+
   counts(): { harness: HarnessId; n: number }[] {
     return this.handle.db.all<{ harness: HarnessId; n: number }>(
       "select harness, count(*) as n from sessions group by harness",

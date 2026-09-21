@@ -5,6 +5,7 @@
   "type": "module",
   "license": "MIT",
   "author": "Gateton",
+  "private": true,
   "bin": {
     "sessionhub": "bin/sessionhub.mjs"
   },

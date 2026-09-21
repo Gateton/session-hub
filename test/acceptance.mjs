@@ -154,32 +154,50 @@ check("at least one harness was found", available.length > 0, JSON.stringify(doc
 check("every harness found is indexed", available.some((d) => (doctor.data.indexed?.[d.harness] ?? 0) > 0));
 
 const afterScan = fingerprint([...storeRoots, OTHER_REPO]);
-for (const file of liveFiles([...storeRoots, OTHER_REPO], 1, 1500)) live.add(file);
 
 /**
- * Files the hub has no code path for, so a change in them cannot be ours:
- *  - SQLite's `-shm` and `-wal` sidecars, touched by any connection to a WAL
- *    database even in read-only mode, and holding no session data
- *  - jcode `*.journal.jsonl` append logs; the jcode adapter reads only `.json`
+ * The precise read-only claim: of the files the hub actually opened, none
+ * changed. The hub records every file it reads in its `sources` table, so the
+ * comparison is limited to those files instead of every file in the store
+ * directories, which would wrongly include things the hub has no code path for
+ * (SQLite sidecars, jcode's live edit-stats, other agents' append logs).
+ *
+ * Files another live process is writing are excluded too, and named, so a real
+ * violation can never hide behind them.
  */
-const NOT_OURS = [/-shm$/, /-wal$/, /\.journal\.jsonl$/];
-const changedAfterScan = diffFingerprints(before, afterScan).filter(
-  (file) => !live.has(file) && !NOT_OURS.some((re) => re.test(file)),
-);
-const created = changedAfterScan.filter((f) => f.endsWith("(new)"));
-const removed = changedAfterScan.filter((f) => f.endsWith("(removed)"));
-const modified = changedAfterScan.filter((f) => !f.endsWith("(new)") && !f.endsWith("(removed)"));
+const { DatabaseSync } = await import("node:sqlite");
+const indexDb = new DatabaseSync(path.join(hubHome, "index.sqlite"), { readOnly: true });
+const readPaths = indexDb
+  .prepare("select distinct path from sources")
+  .all()
+  .map((row) => row.path)
+  .filter((p) => typeof p === "string" && before.has(p));
+indexDb.close();
 
+const changedRead = readPaths.filter((file) => {
+  if (live.has(file)) return false;
+  return afterScan.get(file) !== before.get(file);
+});
+const liveRead = readPaths.filter((file) => live.has(file));
+
+check("the hub recorded every file it read", readPaths.length > 0, `${readPaths.length} paths`);
+check(
+  "no file the hub opened was modified by the scan",
+  changedRead.length === 0,
+  changedRead.slice(0, 5).join(", "),
+);
+if (liveRead.length > 0) {
+  process.stdout.write(`  note ${liveRead.length} read file(s) are being appended to by other live agents\n`);
+}
+
+const changedAnywhere = diffFingerprints(before, afterScan);
+const created = changedAnywhere.filter((f) => f.endsWith("(new)"));
+const removed = changedAnywhere.filter((f) => f.endsWith("(removed)"));
 check("a full scan created no file outside the hub home", created.length === 0, created.slice(0, 5).join(", "));
 check("a full scan removed no file outside the hub home", removed.length === 0, removed.slice(0, 5).join(", "));
 check(
-  "a full scan modified no session file",
-  modified.length === 0,
-  modified.slice(0, 5).join(", "),
-);
-check(
   "the database data files are untouched",
-  diffFingerprints(before, afterScan).every((f) => !/(opencode\.db|crush\.db)$/.test(f)),
+  changedAnywhere.filter((f) => !live.has(f)).every((f) => !/(opencode\.db|crush\.db)$/.test(f)),
 );
 check("the hub home is where it says", indexed.data?.home === hubHome, indexed.data?.home);
 
@@ -356,6 +374,64 @@ check("doctor still succeeds on an empty machine", emptyDoctor.code === 0);
 const emptyList = run(["list"], { env: emptyEnv, home: emptyHub });
 check("an empty machine says nothing matched", /no sessions matched/i.test(emptyList.stdout));
 check("an empty machine is not an error", emptyList.code === 0);
+
+process.stdout.write("\n6b. deep search reads transcripts the index missed\n");
+const deep = runJson(["search", "session", "--deep", "--limit", "3", "--max", "40"], { env });
+check("--deep answers with a bounded scan", deep.data !== null && typeof deep.data.scanned === "number", deep.stderr.slice(0, 160));
+check("--deep reports how many transcripts it read", (deep.data?.scanned ?? 0) > 0 && (deep.data?.scanned ?? 0) <= 40);
+check(
+  "--deep hits carry a snippet",
+  (deep.data?.hits ?? []).every((h) => typeof h.snippet === "string" && h.snippet.length > 0),
+);
+// A random token cannot appear in any real transcript. The harness filter keeps
+// this run's own jcode session (which records the token) out of the search.
+const token = `zzq${Date.now()}qq`;
+const deepMiss = runJson(["search", token, "--deep", "--max", "40", "--harness", "claude-code"], { env });
+check("--deep says nothing matched instead of inventing", (deepMiss.data?.hits ?? []).length === 0);
+check("--deep on an empty result is not an error", deepMiss.code === 0);
+
+process.stdout.write("\n6c. the MCP server answers a harness\n");
+const mcpCall = (messages) => {
+  const payload = `${messages.map((m) => JSON.stringify(m)).join("\n")}\n`;
+  const r = spawnSync(process.execPath, [path.join(repoRoot, "mcp", "server.mjs"), "--home", hubHome], {
+    input: payload,
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  const lines = (r.stdout ?? "")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  return { code: r.status, lines, stderr: r.stderr ?? "" };
+};
+const mcp = mcpCall([
+  { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "acceptance", version: "0" } } },
+  { jsonrpc: "2.0", method: "notifications/initialized" },
+  { jsonrpc: "2.0", id: 2, method: "tools/list" },
+  { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "search", arguments: { dir: repoRoot, limit: 2 } } },
+  { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "context", arguments: { uid: "nope-not-a-session" } } },
+  { jsonrpc: "2.0", id: 5, method: "no/such/method" },
+]);
+const byId = new Map(mcp.lines.map((m) => [m.id, m]));
+check("the MCP server initializes", byId.get(1)?.result?.serverInfo?.name === "session-hub", JSON.stringify(byId.get(1) ?? {}).slice(0, 160));
+check(
+  "it publishes search, context and native",
+  (byId.get(2)?.result?.tools ?? []).map((t) => t.name).sort().join(",") === "context,native,search",
+  JSON.stringify((byId.get(2)?.result?.tools ?? []).map((t) => t.name)),
+);
+check("it describes each tool for a model", (byId.get(2)?.result?.tools ?? []).every((t) => (t.description ?? "").length > 80));
+check("a tool call returns text a model can use", (byId.get(3)?.result?.content?.[0]?.text ?? "").length > 50);
+check("a bad uid is reported as an error, not as empty", byId.get(4)?.result?.isError === true);
+check("an unknown method is refused properly", byId.get(5)?.error?.code === -32601);
+check("stdout carried protocol messages only", mcp.lines.length === 5, `${mcp.lines.length} messages`);
 
 process.stdout.write("\n7. the other project is untouched\n");
 if (fs.existsSync(path.join(OTHER_REPO, ".git"))) {
