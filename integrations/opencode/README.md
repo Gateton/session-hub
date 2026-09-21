@@ -113,22 +113,22 @@ palette entry, **session-hub: what is waiting to be imported**.
 ### The browser
 
 One list of every agent's sessions, a preview of what would be imported, and the
-keys in the footer. This is a real capture, 110 columns wide, 50 sessions from 8
-projects across all six harnesses:
+keys in the footer. A real capture, 110 columns wide, 50 sessions from 8 projects
+across all six harnesses, with the home directory replaced by `/home/example`:
 
 ```
  session-hub  50 of 50 shown · 8 project(s)
  this project, newest first
   1 π Pi   2 ✻ Claude Code   3 ⬡ Codex   4 ⌘ OpenCode   5 ❯ Crush   6 ◆ JCode  0 all (showing)
  ┌─ sessions ─────────────────────────────────────│── preview ──────────────────────────────────────────────┐
- │ ▌◆ 4m ago     55 msg · /home/gateton           │ ◆ JCode · deepseek-v4.1-flash · 55 message(s)           │
+ │ ▌◆ 4m ago     55 msg · /home/example           │ ◆ JCode · deepseek-v4.1-flash · 55 message(s)           │
  │ ▌ Produce a real screenshot of session-hub's…  │ jcode:session_owl_1790014229626_f5f92397162df328        │
- │  ◆ 24m ago   165 msg · /home/gateton           │ /home/gateton · last activity 4m ago                    │
+ │  ◆ 24m ago   165 msg · /home/example           │ /home/example · last activity 4m ago                    │
  │   Improve the OpenCode TUI browser of `sessi…  │ 4/4 msgs · ~1,810 tokens · nothing sent yet             │
- │  ⌘ 41m ago     2 msg · /home/gateton           │ ──────────────────────────────────────────────────────  │
+ │  ⌘ 41m ago     2 msg · /home/example           │ ──────────────────────────────────────────────────────  │
  │   Pruebas de session-hub en Codex y OpenCode   │ # Imported Session Context                              │
- │  ⬡ 1h ago      4 msg · /home/gateton/Projects… │ - Source harness: JCode                                 │
- │   # AGENTS.md instructions for /home/gateton…  │ - Source session ID: session_owl_1790014229626_f5f923…  │
+ │  ⬡ 1h ago      4 msg · /home/example/Projects… │ - Source harness: JCode                                 │
+ │   # AGENTS.md instructions for /home/example…  │ - Source session ID: session_owl_1790014229626_f5f923…  │
  └────────────────────────────────────────────────│─────────────────────────────────────────────────────────┘
  ↑↓ move · tab preview · enter import · / search · 1-6 harness · 0 all · r reload · esc back
  open again from anywhere: ctrl+shift+h · alt+h · ctrl+p → session-hub, browse sessions from your other agen…

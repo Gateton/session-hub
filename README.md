@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/opencode-hub.png" alt="session-hub's browser inside OpenCode: one list of sessions from Pi, Claude Code, Codex, OpenCode, Crush and JCode, with a preview of the conversation that would be imported and what it costs." width="880">
+<img src="./assets/session-hub-header.png" alt="session-hub: your coding sessions, everywhere. Browse, continue, switch." width="100%">
 
 <h1>session-hub</h1>
 
@@ -79,10 +79,12 @@ cd session-hub
 .\install.ps1         # Windows
 ```
 
-Or call the installer directly:
+Both scripts do nothing but check Node and run the installer, so any platform can call
+that installer directly. This is the only entry point that exists before session-hub is
+installed: there is no package to fetch yet.
 
 ```bash
-node bin/sessionhub.mjs install
+node install.mjs
 ```
 
 It finds the agents on your `PATH`, shows their versions, and **asks which ones you want
@@ -98,8 +100,8 @@ session-hub in**. Nothing is installed into an agent you did not pick. Then it:
 For scripts, where there is nobody to ask:
 
 ```bash
-node bin/sessionhub.mjs install --only codex --json
-node bin/sessionhub.mjs install --all --dry-run
+node install.mjs --only codex --json
+node install.mjs --all --dry-run
 ```
 
 `--dry-run` prints every command it would run and changes nothing.
@@ -125,8 +127,15 @@ What differs is how you reach for it, and how the conversation arrives.
 
 ### OpenCode
 
-OpenCode is the only one of the three with an API for a real terminal UI, so this is
-where the browser lives. That is the screenshot at the top of this page.
+OpenCode is the only one of the three with an API for a real terminal UI, so it is the
+only one with a full-screen browser. Open it with `ctrl+shift+h`, `alt+h`, or the command
+palette:
+
+<div align="center">
+
+<img src="./assets/opencode-hub.png" alt="The session-hub browser inside OpenCode: one list of sessions from Codex, Claude Code, Pi, OpenCode, JCode and Crush, each with its own marker and colour, next to a preview of the conversation that would be imported, its cost in messages and tokens, and the words nothing sent yet. The footer lists the keys: arrows to move, tab to preview, enter to import, slash to search, 1 to 6 for an agent, 0 for all, r to reload, esc to go back." width="880">
+
+</div>
 
 | | |
 | --- | --- |
@@ -254,7 +263,7 @@ You can also be direct:
 
 ```text
 /hub                                  # sessions of this project, every agent
-/hub turnero urgencias                # search every transcript
+/hub payment retries                  # search every transcript
 /hub load codex:0191ab...             # import it, delivered with the next message
 ```
 
@@ -362,7 +371,7 @@ broken adapter never takes down the others.
 | [`integrations/opencode/README.md`](integrations/opencode/README.md) | The browser, `/hub`, the four tools, keybinds, colours and the filter |
 | [`integrations/claude/README.md`](integrations/claude/README.md) | The plugin, the two hooks, first-run vendoring and the vendored layout |
 | [`integrations/codex/README.md`](integrations/codex/README.md) | The plugin, hook trust, the MCP wiring and Codex's sandbox |
-| [`docs/demo.md`](docs/demo.md) | How the screenshot at the top of this page is produced |
+| [`docs/demo.md`](docs/demo.md) | How the OpenCode screenshot on this page is produced |
 
 ## Development
 

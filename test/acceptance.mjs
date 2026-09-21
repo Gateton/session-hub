@@ -614,18 +614,45 @@ check("tools carry a title", tools.every((t) => typeof t.annotations?.title === 
 const roHome = tmpdir("readonly-home");
 const roEnv = { env: {}, home: roHome };
 run(["index", "--force"], roEnv);
+
+// Seed from whatever this machine actually indexed. A search with no hits exits
+// non-zero by design, so the check needs a term that is really in the index, and
+// a real session to ask for context. Hardcoding either one would make this block
+// pass only on the machine it was written on.
+const seedList = runJson(["list", "--limit", "40"], roEnv);
+const seedSessions = Array.isArray(seedList.data) ? seedList.data : [];
+const seed = seedSessions.find((s) => /[A-Za-z][A-Za-z-]{4,}/.test(s.title ?? ""));
+const seedWord = seed
+  ? (seed.title.match(/[A-Za-z][A-Za-z-]{4,}/g) ?? []).sort((a, b) => b.length - a.length)[0]
+  : null;
+check(
+  "the read-only checks have a real session to work with",
+  Boolean(seed && seedWord && seed.nativeId),
+  `${seedSessions.length} session(s) listed`,
+);
+
 const roMode = fs.statSync(roHome).mode;
 try {
   fs.chmodSync(roHome, 0o555);
-  const roSearch = run(["search", "turnero", "--limit", "2"], roEnv);
-  check("a read-only hub home still answers searches", roSearch.code === 0 && roSearch.stdout.length > 40, `exit ${roSearch.code}`);
+  // Deliberately not --json: the read-only note is written to stderr only in the
+  // human output path, and the note is one of the things asserted below.
+  const roSearch = run(["search", seedWord ?? "session", "--limit", "50"], roEnv);
+  check(
+    "a read-only hub home still answers searches",
+    roSearch.code === 0 && roSearch.stdout.includes(seed?.uid ?? "\u0000"),
+    `exit ${roSearch.code}`,
+  );
   check(
     "the read-only state is explained on stderr",
     /cannot write the hub index/.test(roSearch.stderr),
     roSearch.stderr.slice(0, 120),
   );
-  const roContext = run(["context", "opencode:ses_f5f0d04b7ffeAALNW1Awa8ipr5", "--chars", "4000"], roEnv);
-  check("a read-only hub home still returns real context", roContext.code === 0 && roContext.stdout.includes("detectarCambiosBox"), `exit ${roContext.code}`);
+  const roContext = run(["context", seed?.uid ?? "", "--chars", "4000"], roEnv);
+  check(
+    "a read-only hub home still returns real context",
+    roContext.code === 0 && roContext.stdout.includes(seed?.nativeId ?? "\u0000"),
+    `exit ${roContext.code}`,
+  );
   const roScan = run(["index", "--force"], roEnv);
   check("a rescan is refused with a fixable message", roScan.code === 2 && /cannot be rescanned/.test(roScan.stderr), roScan.stderr.slice(0, 120));
 } finally {

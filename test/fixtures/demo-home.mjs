@@ -3,7 +3,7 @@
  *
  * Two jobs, both about honesty:
  *
- *  1. The screenshot at the top of the README is a public artefact. It must not
+ *  1. The screenshot the README shows for OpenCode is a public artefact. It must not
  *     contain a single string from this machine's real session stores, so every
  *     session here is invented: invented project names, invented repositories,
  *     invented conversations. Nothing in this file reads the user's data.

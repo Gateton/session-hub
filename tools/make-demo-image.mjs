@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Regenerate `assets/opencode-hub.png`: the screenshot at the top of the README.
+ * Regenerate `assets/opencode-hub.png`: the OpenCode browser screenshot the README
+ * shows in its OpenCode section.
  *
  * One command, no manual steps, no state that a previous run left behind:
  *
