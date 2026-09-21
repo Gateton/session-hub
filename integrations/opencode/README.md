@@ -341,7 +341,7 @@ install, so it is not committed; recreate it with:
 
 OpenCode resolves an npm plugin spec with a plain `import()`, so the published
 package has to name these two entry points. This is the only change the root
-`package.json` needs, and it was left to the repo owner on purpose:
+`package.json` needs:
 
 ```json
 {
@@ -367,8 +367,8 @@ Notes on that map:
   package, including `bin/sessionhub.mjs`.
 - Keep `"files"` including `integrations` (it already does).
 - The root `package.json` is currently `"private": true`, so the npm route needs
-  that removed as well. Until then the file-path install above is the only one
-  that works, and it is what this integration was verified against.
+  that removed as well. Until then the file-path install above is the one that
+  works.
 
 ## Notes on the runtime
 
@@ -385,61 +385,7 @@ Notes on that map:
 - The TUI half imports `solid-js` and `@opentui/solid`; OpenCode rewrites those
   two specifiers for TUI plugins, and nothing else.
 
-## What was verified on this machine
-
-Observed, not assumed. OpenCode 1.18.30, plugin running on Bun 1.3.14.
-
-- **The server half loads and registers, with no model turn involved.** A scratch
-  project whose `opencode.json` points at this directory:
-  `opencode debug config` resolves it and reports the registered command
-  (`name: hub`, the description and the template), and the trace file records
-  `plugin loaded · runtime: bun 1.3.14 · execPath: …/bin/opencode · hub: …` and
-  `registered the /hub command`. Against `opencode serve`,
-  `/experimental/tool/ids` lists `sessionhub_find`, `sessionhub_search`,
-  `sessionhub_load`, `sessionhub_reopen`, and `/experimental/tool` shows the
-  derived JSON Schema for each.
-- **The `/hub` command runs.** `POST /session/{id}/command` with
-  `{"command":"hub"}` produced a user message containing the real session list for
-  the project plus the command help. `{"command":"hub","arguments":"load <uid>"}`
-  produced the pick confirmation *and* the imported transcript in that same
-  message, and the trace records `delivered claude-code:… (~322 tokens)`.
-- **Delivery is exactly once.** With a pick recorded, the next message carried the
-  block (`Source: <uid>` present in the persisted part); the message after it was
-  clean.
-- **The browser renders and works.** Driven through a real pty: the keybind
-  opened the route, which listed 50 real sessions from every harness with marker,
-  harness, age, message count and project, and the preview of the selected one
-  with its metadata, its cost in messages and tokens, the words `nothing sent yet`
-  and the head of the package; the selection moved, `tab` moved the focus to the
-  preview, `esc` cleared the filter and a second `esc` left. `enter` raised the
-  confirmation dialog with the measured cost; the second `enter` recorded the pick
-  (trace: `browser picked … (40000 chars)`) and wrote `~/.session-hub/pending.json`.
-- **The browser was driven headlessly, key by key, on the runtime OpenCode uses.**
-  `@opentui/solid`'s test renderer, on the embedded Bun
-  (`BUN_BE_BUN=1 opencode --conditions=browser`), against a build of this file made
-  with the same babel transform OpenCode applies, checking the captured frames and
-  colour spans: the lazy load (no hub call before the route is opened), the header
-  counts, the selection and its accent bar, `1`-`6` and `0` filtering the list, the
-  filter box typing and its honest empty state, the debounced transcript search,
-  both `esc` presses, `tab`, the two-pane layout at 110x32 and the one-pane
-  fallback at 80x24 and 60x20 with nothing drawn past the last row, and each
-  harness marker wearing the token the table above promises (`π` `success`, `✻`
-  `warning`, `⬡` `info`, `⌘` `accent`, `❯` `secondary`, `◆` `primary`). Every check
-  passed.
-- **The CLI bridge works through the same module both halves use.** `hub.ts` was
-  imported directly and `findSessions`, `contextFor`, `nativeResume`,
-  `pickSession`, `peekPending`, `takePending` and `clearPending` all returned real
-  data; a second `takePending` returned nothing, which is the exactly-once
-  guarantee.
-- **Type checking is clean** under `tsc --strict --noUnusedLocals
-  --noUnusedParameters` against the real OpenCode and OpenTUI definitions, with a
-  negative control confirming that JSX props and API calls are genuinely checked.
-
-**Not verified**, and not claimed: `ctrl+shift+h` itself, which a terminal without
-kitty keyboard reporting cannot send at all (`alt+h` is the key that was driven);
-the mouse, which this view does not bind; and how the palette entry behaves when
-another plugin has already taken the `sessionhub.*` command names. To see the
-browser yourself:
+## Try it
 
 ```
 opencode
@@ -449,3 +395,10 @@ opencode
 
 If the list is empty or the key does nothing, `~/.session-hub/opencode-plugin-loaded.log`
 and `sessionhub doctor` are the two places that say why.
+
+## Known limits
+
+`ctrl+shift+h` only reaches OpenCode from a terminal that reports shifted keys (the
+kitty keyboard protocol). `alt+h` is the binding that works everywhere. The browser
+does not bind the mouse, and a plugin that has already taken the `sessionhub.*`
+command names owns the palette entries.

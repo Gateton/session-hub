@@ -17,7 +17,14 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(repoRoot, "bin", "sessionhub.mjs");
-const OTHER_REPO = "/home/gateton/Projects/pi-session-hub";
+/**
+ * A second checkout of this project, when one happens to sit next to this one.
+ * It exists so the suite can prove that a full scan of the user's stores leaves
+ * an unrelated working tree alone. Override it with SESSION_HUB_OTHER_REPO, or
+ * leave it unset and the check is skipped.
+ */
+const OTHER_REPO =
+  process.env.SESSION_HUB_OTHER_REPO?.trim() || path.join(os.homedir(), "Projects", "pi-session-hub");
 
 let passed = 0;
 let failed = 0;
@@ -704,7 +711,7 @@ process.stdout.write("\n7. the other project is untouched\n");
 if (fs.existsSync(path.join(OTHER_REPO, ".git"))) {
   const status = spawnSync("git", ["-C", OTHER_REPO, "status", "--porcelain"], { encoding: "utf8" });
   const dirty = (status.stdout ?? "").trim();
-  check("pi-session-hub has no new changes from this suite", dirty.length === 0, dirty.slice(0, 200));
+  check("the neighbouring checkout has no new changes from this suite", dirty.length === 0, dirty.slice(0, 200));
 }
 
 fs.rmSync(hubHome, { recursive: true, force: true });

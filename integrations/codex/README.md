@@ -64,8 +64,7 @@ codex plugin marketplace add <owner>/<repo> --ref main --sparse integrations/cod
 codex plugin add session-hub@session-hub-local
 ```
 
-Only the local-path forms have been exercised end to end here, so if the Git
-form misbehaves, add the local path instead.
+If the Git form misbehaves in your environment, add the local path instead.
 
 ### Check it
 
@@ -122,7 +121,7 @@ the installed copy of the handler, which is the file Codex put in its cache:
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/home/gateton/.codex/plugins/cache/session-hub-local/session-hub/0.1.0/scripts/sessionhub-hook.mjs\"",
+            "command": "node \"<codex-home>/plugins/cache/session-hub-local/session-hub/0.1.0/scripts/sessionhub-hook.mjs\"",
             "timeout": 25,
             "statusMessage": "Checking for a session-hub selection",
             "additionalContextLimit": 12000
@@ -135,7 +134,7 @@ the installed copy of the handler, which is the file Codex put in its cache:
         "hooks": [
           {
             "type": "command",
-            "command": "node \"/home/gateton/.codex/plugins/cache/session-hub-local/session-hub/0.1.0/scripts/sessionhub-hook.mjs\"",
+            "command": "node \"<codex-home>/plugins/cache/session-hub-local/session-hub/0.1.0/scripts/sessionhub-hook.mjs\"",
             "timeout": 25,
             "statusMessage": "Loading the session you picked",
             "additionalContextLimit": 12000
@@ -263,7 +262,7 @@ so the path is absolute and there is no plugin involved:
 ```toml
 [mcp_servers.session_hub]
 command = "node"
-args = ["/home/gateton/Projects/session-hub/mcp/server.mjs"]
+args = ["/path/to/session-hub/mcp/server.mjs"]
 ```
 
 You then lose the skill and the hook, so nothing arrives on your next message;
@@ -312,7 +311,7 @@ earlier message. `sessionhub pending --peek` shows the state.
 
 **Codex cannot see the plugin at all.** Check `codex plugin marketplace list`
 shows `session-hub-local` with root
-`/home/gateton/Projects/session-hub/integrations/codex`. If the root moved,
+`/path/to/session-hub/integrations/codex`. If the root moved,
 remove and re-add the marketplace.
 
 ## Uninstall

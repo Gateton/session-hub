@@ -19,7 +19,7 @@
  *    1 π  2 ✻  3 ⬡  4 ⌘  5 ❯  6 ◆  0 all (showing)
  *    ┌ sessions ──────────────────────┬──────────────── preview ───────────────┐
  *    │ ▸✻ Claude Code  2m ago  449 msg │ ✻ Claude Code · claude-sonnet-4 · 449 m │
- *    │   the parser fix                │ claude-code:7f2c… · /home/gateton · 2m a │
+ *    │   the parser fix                │ claude-code:7f2c… · /home/you · 2m ag  │
  *    │  ⌘ OpenCode …                   │ importing 19/77 · ~1,560 tokens …       │
  *    └─────────────────────────────────┴────────────────────────────────────────┘
  *    ↑↓ move · tab preview · enter import · / search · 1-6 harness · r reload

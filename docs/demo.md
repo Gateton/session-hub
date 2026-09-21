@@ -56,12 +56,12 @@ OpenCode SQLite databases. Timestamps are relative to the moment the fixture
 runs, which is why the image says "just now" and "11m ago" rather than a date
 that ages.
 
-To check for leaks yourself:
+To check for leaks yourself, look for anything that is not the synthetic home:
 
 ```bash
 python3 - <<'PY'
 data = open("/tmp/session-hub-demo/opencode-hub.ansi", "rb").read().decode("utf-8", "replace")
-for needle in ["gateton", "/home/", "Projects/"]:
+for needle in ["/home/", "Projects/", "Documents/"]:
     print(needle, data.count(needle))
 PY
 ```

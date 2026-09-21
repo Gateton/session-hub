@@ -7,3 +7,6 @@ node_modules/
 # Created at runtime inside a plugin copy, never committed
 vendor/
 .sessionhub-vendor-attempted
+
+# Local tooling artifacts, never part of session-hub
+.atl/
