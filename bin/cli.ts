@@ -18,6 +18,8 @@ import process from "node:process";
 
 import { Hub, HubReadError, hubHome } from "../core/hub.ts";
 import { looksLikeRoot, packageRoot, readOwnVersion, vendorInto, writeInstallRecord } from "../core/install.ts";
+import { anyFailed, installIntegrations } from "../core/install-harnesses.ts";
+import { stageHub } from "../core/install.ts";
 import { HARNESS_LABEL, HARNESS_ORDER, type ExternalSession, type HarnessId } from "../core/types.ts";
 import { formatNativeResume } from "../core/native.ts";
 import { clearPending, readPending, writePending } from "../core/pending.ts";
@@ -37,6 +39,8 @@ Usage:
   sessionhub index [options]             Rebuild the local index
   sessionhub doctor [options]            Report which harnesses were found and how many sessions
   sessionhub version                     Print the version
+  sessionhub install [options]           One command: install into every harness found on PATH
+  sessionhub mcp                         Run the MCP server on stdio (for npx and MCP clients)
   sessionhub setup [options]             Record where the hub lives, for the harness plugins
   sessionhub vendor --into <dir>         Copy the hub into a plugin so it is self-contained
 
@@ -46,6 +50,9 @@ Options:
   --file <text>    Filter by a touched file path
   --limit <n>      Maximum rows (default 25 for lists, 300 for search)
   --chars <n>      Context budget in characters (default 40000)
+  --only <list>    With install: comma-separated claude-code,codex,opencode
+  --in-place       With install: use this directory instead of staging a copy
+  --dry-run        Show what install would run, without running it
   --deep           Search full transcripts instead of the indexed excerpt
   --max <n>        Sessions to read in --deep mode (default 400)
   --json           Machine-readable output
@@ -203,6 +210,67 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
         "",
       ].join("\n"),
     );
+  },
+
+  async mcp() {
+    // The server as a subcommand, so a one-line MCP registration works:
+    //   claude mcp add session-hub -- npx -y session-hub mcp
+    const { start } = await import("../mcp/server.impl.ts");
+    await start();
+  },
+
+  async install(args) {
+    const root = packageRoot();
+    if (!looksLikeRoot(root)) {
+      die(`cannot find the hub at ${root}. Run this from an unpacked session-hub package.`);
+    }
+    // Installers run from places that disappear: npx's cache is garbage-collected
+    // and a checkout can move. Stage a copy in the hub home so every plugin and
+    // the MCP server has one path that stays put.
+    const dryRun = flagBool(args, "dry-run");
+    const staged = flagBool(args, "in-place") || dryRun ? { root, files: 0, bytes: 0 } : stageHub(root);
+    const installRoot = dryRun ? path.join(hubHome(), "src") : staged.root;
+    if (!looksLikeRoot(installRoot)) {
+      die(`staging the hub into ${installRoot} did not produce a usable copy.`);
+    }
+    // Register the install location: plugins find the hub through this record, so
+    // installing without it would produce plugins that cannot answer anything.
+    if (!flagBool(args, "dry-run")) writeInstallRecord(installRoot);
+
+    const only = flagStr(args, "only")
+      ?.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const results = installIntegrations({ root: installRoot, only, dryRun: flagBool(args, "dry-run") });
+
+    if (flagBool(args, "json")) {
+      return json({ root, installRoot, staged: staged.files, dryRun: flagBool(args, "dry-run"), results });
+    }
+
+    const lines: string[] = [];
+    if (dryRun) {
+      lines.push(`would stage the hub at ${installRoot} so nothing depends on where this copy lives`, "");
+    } else if (installRoot !== root) {
+      lines.push(`staged the hub at ${installRoot} (${staged.files} files), so nothing depends on this directory`, "");
+    }
+    for (const result of results) {
+      lines.push(`${result.label}:`);
+      if (result.skipped) lines.push(`  skipped: ${result.skipped}`);
+      for (const step of result.steps) {
+        const mark = step.ok ? "ok  " : "FAIL";
+        lines.push(`  ${mark} ${step.command}`);
+        if (!step.ok) lines.push(`       ${step.output.split("\n").slice(0, 3).join("\n       ")}`);
+      }
+      if (result.manual) lines.push(`  next: ${result.manual}`);
+      lines.push("");
+    }
+    lines.push(
+      results.some((r) => r.detected && !r.skipped)
+        ? "Open a new session in the harness you just installed, and ask it to continue something you did elsewhere."
+        : "No supported harness was found on PATH (claude, codex, opencode). The command line still works.",
+    );
+    process.stdout.write(`${lines.join("\n")}\n`);
+    if (anyFailed(results)) process.exitCode = 1;
   },
 
   async vendor(args) {
@@ -370,12 +438,12 @@ const commands: Record<string, (args: Args) => Promise<void>> = {
       await hub.ensureFresh();
       const dir = flagStr(args, "dir") ?? process.cwd();
       const limit = flagNum(args, "limit") ?? 25;
-      const sessions = hub.here(dir, limit);
+      const sessions = hub.here(dir, limit, harnessFilter(args));
       if (flagBool(args, "json")) return json({ dir, sessions });
       if (sessions.length === 0) {
         if (flagBool(args, "json")) return json({ dir, sessions: [] });
         return void process.stdout.write(
-          `no sessions found for ${dir} in any harness.\n` +
+          `no sessions found for ${dir}${flagStr(args, "harness") ? ` [${flagStr(args, "harness")}]` : ""} in any harness.\n` +
             `Try "sessionhub list" for every session, or "sessionhub search <words>".\n`,
         );
       }

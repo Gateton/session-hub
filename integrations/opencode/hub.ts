@@ -15,12 +15,18 @@
  * gives us parsed data or the hub's own error text, never a mix.
  */
 
+import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { hubRoot, missingHubMessage, runHubJson } from "./scripts/resolve.mjs"
+import { hubRoot, missingHubMessage } from "./scripts/resolve.mjs"
+
+/** Name of the trace both halves of this integration append to. */
+export const PLUGIN_LOG_FILE = "opencode-plugin-loaded.log"
+
+const MAX_LOG_BYTES = 64 * 1024
 
 /**
  * Directory this integration was loaded from. Passed to the resolver so a
@@ -183,30 +189,141 @@ export function hubFixHint(outcome: { missing: boolean; message: string }): stri
 
 const DEFAULT_TIMEOUT_MS = 60_000
 
-async function call<Data>(args: string[], timeoutMs = DEFAULT_TIMEOUT_MS): Promise<HubOutcome<Data>> {
-  let result
+interface RunResult {
+  code: number
+  stdout: string
+  stderr: string
+  missing?: boolean
+}
+
+/**
+ * Which interpreter runs the hub CLI.
+ *
+ * The hub needs Node: its index is opened with `node:sqlite`, and Bun's shim for
+ * that module is not complete, so running the CLI on Bun fails with "cannot open
+ * the hub index" (verified against Bun 1.3).
+ *
+ * Under Node, `process.execPath` is already the right answer. Under Bun it is
+ * the OpenCode binary, which is why `runHub` from `scripts/resolve.mjs` cannot
+ * be used as-is here: it would run `opencode bin/sessionhub.mjs ...` and get
+ * OpenCode's own usage text back as the "hub error". The bare name `node` is
+ * used instead and left to the OS to find on PATH.
+ */
+function nodeCommand(): string {
+  const fromEnv = process.env.SESSION_HUB_NODE?.trim()
+  if (fromEnv) return fromEnv
+  if (!process.versions.bun) return process.execPath
+  return "node"
+}
+
+const NO_NODE_HINT = [
+  "session-hub found its command line but no Node to run it with.",
+  "",
+  "The hub's index needs Node 22.5 or newer. Fix it with either:",
+  "  put node on PATH",
+  "  export SESSION_HUB_NODE=/path/to/node",
+].join("\n")
+
+/**
+ * Spawn the hub CLI and collect stdout/stderr. Never throws on a non-zero exit:
+ * the hub's own error text is what the user needs to see.
+ *
+ * Where the hub lives is decided by `hubRoot` in `scripts/resolve.mjs`, the
+ * shared resolver, exactly as the other harness integrations do it.
+ */
+async function spawnHub(args: string[], timeoutMs: number): Promise<RunResult> {
+  let root: string | null = null
   try {
-    result = await runHubJson<Data>(args, { pluginRoot: PLUGIN_ROOT, timeoutMs })
+    root = hubRoot(PLUGIN_ROOT)
+  } catch {
+    root = null
+  }
+
+  const command = root ? nodeCommand() : "sessionhub"
+  const argv = root ? [path.join(root, "bin", "sessionhub.mjs"), ...args] : args
+
+  return await new Promise<RunResult>((resolve) => {
+    let child
+    try {
+      child = spawn(command, argv, {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, SESSION_HUB_ROOT: root ?? process.env.SESSION_HUB_ROOT ?? "" },
+      })
+    } catch (err) {
+      resolve({ code: 127, stdout: "", stderr: err instanceof Error ? err.message : String(err), missing: !root })
+      return
+    }
+
+    let stdout = ""
+    let stderr = ""
+    let settled = false
+    const finish = (result: RunResult): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(result)
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        child?.kill("SIGKILL")
+      } catch {
+        /* already gone */
+      }
+      finish({ code: 124, stdout, stderr: `${stderr}sessionhub timed out after ${timeoutMs}ms\n` })
+    }, timeoutMs)
+
+    child.stdout?.on("data", (chunk: Buffer | string) => (stdout += chunk.toString()))
+    child.stderr?.on("data", (chunk: Buffer | string) => (stderr += chunk.toString()))
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT" && root) {
+        finish({ code: 127, stdout, stderr: NO_NODE_HINT, missing: false })
+        return
+      }
+      finish({ code: 127, stdout, stderr: `${stderr}${err.message}\n`, missing: !root })
+    })
+    child.on("close", (code) => finish({ code: code ?? 1, stdout, stderr }))
+  })
+}
+
+/** Run the hub CLI with `--json` and parse the payload. */
+async function call<Data>(args: string[], timeoutMs = DEFAULT_TIMEOUT_MS): Promise<HubOutcome<Data>> {
+  let result: RunResult
+  try {
+    result = await spawnHub([...args, "--json"], timeoutMs)
   } catch (err) {
     return failure(err instanceof Error ? err.message : String(err), false)
   }
-  if (result.ok) return { ok: true, data: result.data }
-  return failure(result.error || "session-hub exited without a message", Boolean(result.result?.missing))
+  if (result.code !== 0) {
+    return failure(result.stderr.trim() || result.stdout.trim() || "session-hub exited without a message", Boolean(result.missing))
+  }
+  try {
+    return { ok: true, data: JSON.parse(result.stdout) as Data }
+  } catch (err) {
+    return failure(`could not parse hub output: ${err instanceof Error ? err.message : String(err)}`, false)
+  }
+}
+
+/**
+ * The hub's own state directory: `$SESSION_HUB_HOME`, or `~/.session-hub`.
+ * Mirrors `hubHome()` in `core/hub.ts`, which is where the index and the pending
+ * record live.
+ */
+export function hubHomeDir(): string {
+  const fromEnv = process.env.SESSION_HUB_HOME?.trim()
+  return fromEnv ? path.resolve(fromEnv) : path.join(os.homedir(), ".session-hub")
 }
 
 /**
  * Fast path for the delivery hook.
  *
  * The hook runs on every message, and spawning Node on every message just to
- * learn that nothing is pending is a tax on the user's typing. `pending.json`
- * lives in the hub home, which is `$SESSION_HUB_HOME` or `~/.session-hub`
- * (see `core/hub.ts`). If the file is not there, nothing can be pending; when it
- * is there the CLI stays the source of truth, including the staleness rule.
+ * learn that nothing is pending is a tax on the user's typing. If the pending
+ * file is not there, nothing can be pending; when it is there the CLI stays the
+ * source of truth, including the staleness rule.
  */
 export function pendingFilePath(): string {
-  const fromEnv = process.env.SESSION_HUB_HOME?.trim()
-  const home = fromEnv ? path.resolve(fromEnv) : path.join(os.homedir(), ".session-hub")
-  return path.join(home, "pending.json")
+  return path.join(hubHomeDir(), "pending.json")
 }
 
 export function pendingFileExists(): boolean {
@@ -214,6 +331,32 @@ export function pendingFileExists(): boolean {
     return fs.existsSync(pendingFilePath())
   } catch {
     return false
+  }
+}
+
+/**
+ * Append one line to the integration's trace in the hub home.
+ *
+ * Both halves of the OpenCode integration do their real work in a child
+ * process, so without this file "did my pick arrive?" has no answer. The hub
+ * writes nothing outside its home and neither does this; the file is capped so
+ * it cannot grow without bound, and a failure to write it is ignored, because a
+ * diagnostic must never break a turn.
+ */
+export function pluginLog(message: string): void {
+  try {
+    const file = path.join(hubHomeDir(), PLUGIN_LOG_FILE)
+    let existing = ""
+    try {
+      existing = fs.readFileSync(file, "utf8")
+    } catch {
+      /* first write */
+    }
+    if (existing.length > MAX_LOG_BYTES) existing = ""
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, `${existing}${new Date().toISOString()} ${message}\n`, "utf8")
+  } catch {
+    /* never break a turn over a log line */
   }
 }
 
@@ -228,19 +371,33 @@ export interface FindOptions {
   dir?: string
   harness?: HarnessId
   limit?: number
+  /**
+   * Where to look. `auto` (the default) searches everywhere when a query is
+   * given, this project when a directory is given, and everywhere otherwise.
+   */
+  scope?: "auto" | "project" | "all"
+}
+
+export interface FindResult {
+  sessions: HubSession[]
+  /** Which question was actually answered, so callers can say so honestly. */
+  scope: "project" | "all"
 }
 
 /** `search`, `here` or `list` depending on what was asked for. */
-export async function findSessions(options: FindOptions = {}): Promise<HubOutcome<HubSession[]>> {
+export async function findSessions(options: FindOptions = {}): Promise<HubOutcome<FindResult>> {
   const limit = options.limit ?? 15
   const harness = options.harness ? ["--harness", options.harness] : []
 
   const query = options.query?.trim()
   if (query) {
-    return call<HubSession[]>(["search", query, ...harness, "--limit", String(limit)])
+    const hits = await call<HubSession[]>(["search", query, ...harness, "--limit", String(limit)])
+    if (!hits.ok) return hits
+    return { ok: true, data: { sessions: hits.data ?? [], scope: "all" } }
   }
-  if (options.dir) {
-    const result = await call<{ dir: string; sessions: HubSession[] }>([
+
+  if (options.dir && options.scope !== "all") {
+    const here = await call<{ dir: string; sessions: HubSession[] }>([
       "here",
       "--dir",
       options.dir,
@@ -248,10 +405,21 @@ export async function findSessions(options: FindOptions = {}): Promise<HubOutcom
       "--limit",
       String(limit),
     ])
-    if (!result.ok) return result
-    return { ok: true, data: result.data.sessions ?? [] }
+    if (!here.ok) return here
+    const sessions = here.data.sessions ?? []
+    // An empty project answer is not a useful answer: fall back to the newest
+    // sessions everywhere, and let the caller label it as the fallback it is.
+    if (sessions.length > 0 || options.scope === "project") {
+      return { ok: true, data: { sessions, scope: "project" } }
+    }
+    const all = await call<HubSession[]>(["list", ...harness, "--limit", String(limit)])
+    if (!all.ok) return all
+    return { ok: true, data: { sessions: all.data ?? [], scope: "all" } }
   }
-  return call<HubSession[]>(["list", ...harness, "--limit", String(limit)])
+
+  const all = await call<HubSession[]>(["list", ...harness, "--limit", String(limit)])
+  if (!all.ok) return all
+  return { ok: true, data: { sessions: all.data ?? [], scope: "all" } }
 }
 
 /** The free preview: the transcript, read straight off disk, no model involved. */

@@ -74,6 +74,68 @@ export function readInstallRecord(home?: string): InstallRecord | null {
   }
 }
 
+/**
+ * Copy the hub somewhere stable and return that path.
+ *
+ * `npx -y session-hub install` runs from a versioned cache directory that npm may
+ * garbage-collect, and a checkout can be moved or deleted. Plugins and the MCP
+ * server need one path that outlives both, so the installer stages the code in
+ * the hub home and points everything at that.
+ */
+export function stageHub(root: string, hubHomeDir?: string): { root: string; files: number; bytes: number } {
+  const target = path.join(hubHome(hubHomeDir), "src");
+  fs.mkdirSync(target, { recursive: true });
+
+  // Replace the previous copy so a re-install cannot leave a stale mix of files.
+  for (const entry of fs.readdirSync(target)) {
+    if (entry === "index.sqlite" || entry === "pending.json" || entry === "install.json") continue;
+    fs.rmSync(path.join(target, entry), { recursive: true, force: true });
+  }
+
+  let files = 0;
+  let bytes = 0;
+  const copyTree = (from: string, to: string): void => {
+    fs.mkdirSync(to, { recursive: true });
+    for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === ".git" || entry.name === "vendor") continue;
+      const src = path.join(from, entry.name);
+      const dst = path.join(to, entry.name);
+      if (entry.isDirectory()) {
+        copyTree(src, dst);
+        continue;
+      }
+      const data = fs.readFileSync(src);
+      fs.writeFileSync(dst, data);
+      files++;
+      bytes += data.byteLength;
+    }
+  };
+
+  // The dot directories matter: .claude-plugin/ and .agents/ are the marketplace
+  // manifests, so without them the staged copy is a hub nobody can install.
+  for (const entry of [
+    "core",
+    "bin",
+    "mcp",
+    "integrations",
+    "tools",
+    ".claude-plugin",
+    ".agents",
+    "package.json",
+    "README.md",
+    "LICENSE",
+  ]) {
+    const from = path.join(root, entry);
+    if (!fs.existsSync(from)) continue;
+    if (fs.statSync(from).isDirectory()) copyTree(from, path.join(target, entry));
+    else {
+      fs.copyFileSync(from, path.join(target, entry));
+      files++;
+    }
+  }
+  return { root: target, files, bytes };
+}
+
 export function readOwnVersion(root: string): string {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));

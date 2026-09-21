@@ -154,17 +154,18 @@ export class Hub {
    * is the fastest path to the thing the hub exists for: seeing the Codex or
    * OpenCode session you left behind in the project you are standing in.
    */
-  here(dir: string, limit = 50): ExternalSession[] {
+  here(dir: string, limit = 50, harness?: HarnessId): ExternalSession[] {
     const abs = path.resolve(dir);
     const repo = deriveRepo(abs);
     const rows = this.handle.db.all<IndexedSessionRow>(
       `select * from sessions
-        where (repo is not null and repo = ?)
+        where ((repo is not null and repo = ?)
            or cwd = ?
-           or cwd like ?
+           or cwd like ?)
+          and (? is null or harness = ?)
         order by coalesce(updated_at, created_at) desc
         limit ?`,
-      [repo ?? abs, abs, `${abs.replace(/\/+$/, "")}/%`, limit],
+      [repo ?? abs, abs, `${abs.replace(/\/+$/, "")}/%`, harness ?? null, harness ?? null, limit],
     );
     return rows.map(rowToSession);
   }

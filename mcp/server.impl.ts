@@ -157,7 +157,10 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<Re
     const limit = typeof args.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : 15;
 
     if (dir) {
-      const sessions = h.here(dir, Math.max(limit, 25));
+      // The harness filter has to survive the dir path: asking for "the last
+      // thing I did with Codex in this project" must not answer with Claude Code
+      // sessions from the same directory.
+      const sessions = h.here(dir, Math.max(limit, 25), harness);
       const filtered = query
         ? sessions.filter((s) => `${s.title ?? ""} ${s.preview ?? ""}`.toLowerCase().includes(query.toLowerCase()))
         : sessions;
@@ -168,10 +171,11 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<Re
         );
       }
       const shown = filtered.slice(0, limit);
+      const scope = `${dir}${harness ? ` [${harness}]` : ""}${query ? ` matching "${query}"` : ""}`;
       const heading =
         shown.length < filtered.length
-          ? `Showing ${shown.length} of ${filtered.length} session(s) for ${dir}${query ? ` matching "${query}"` : ""}:`
-          : `${filtered.length} session(s) for ${dir}${query ? ` matching "${query}"` : ""}:`;
+          ? `Showing ${shown.length} of ${filtered.length} session(s) for ${scope}:`
+          : `${filtered.length} session(s) for ${scope}:`;
       return textResult(
         `${heading}\n\n` +
           shown.map(formatHit).join("\n\n") +

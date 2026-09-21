@@ -53,53 +53,60 @@ cost is printed every time, and `--chars` sets the ceiling.
 
 ## Install
 
-Requires **Node 22.5 or newer**. No runtime dependencies, no build step, no
-`node_modules`.
+### One command
 
 ```bash
-git clone <this repo> ~/session-hub
-node ~/session-hub/bin/sessionhub.mjs setup      # record where the hub lives
-export PATH="$HOME/session-hub/bin:$PATH"        # optional, for the bare command
+node /path/to/session-hub/bin/sessionhub.mjs install
 ```
 
-Then install the integration for the agent you use. In every command below,
-`/path/to/session-hub` means the directory you cloned into (on this machine it is
-`/home/gateton/Projects/session-hub`); it is a real path, not a placeholder to
-paste verbatim.
+It detects the agents you have (`claude`, `codex`, `opencode`), installs the
+integration into each one, stages the hub in `~/.session-hub/src` so nothing
+depends on where the copy came from, and prints the one step it cannot do for
+you: Codex asks you to trust its hooks once, in `/hooks`.
 
-### Claude Code
+`--dry-run` shows the exact commands before running them, `--only codex,opencode`
+narrows the scope, `--json` is for scripts.
+
+Once the package is on npm, this is the same thing in one line, with no checkout:
+
+```bash
+npx -y session-hub install
+```
+
+npm publication is the last step before the first release; until then the
+command above is the one that works.
+
+### Just the tools, no plugin
+
+If you would rather not install a plugin, register the MCP server yourself:
+
+```bash
+claude mcp add session-hub -- npx -y session-hub mcp
+codex  mcp add session-hub -- npx -y session-hub mcp
+```
+
+You get `search`, `context` and `native` in every session. You lose two things:
+the automatic delivery of a session you picked, and the skill that tells the agent
+when to go looking. OpenCode takes the same server through the `mcp` block of its
+config, or the plugin below.
+
+### Through each harness's own plugin manager
 
 ```text
+# Claude Code
 /plugin marketplace add /path/to/session-hub
 /plugin install session-hub@session-hub
-```
 
-Working on the plugin itself? `claude --plugin-dir /path/to/session-hub/integrations/claude`
-loads it without installing anything.
-
-### Codex
-
-```bash
+# Codex
 codex plugin marketplace add /path/to/session-hub
 codex plugin add session-hub@session-hub
+
+# OpenCode
+opencode plugin /path/to/session-hub/integrations/opencode -g
 ```
 
-Codex asks you to trust the plugin's hooks once, in `/hooks`. Until you do, the
-tools and the skill work but a picked session is not delivered automatically.
-
-### OpenCode
-
-Add one entry to `opencode.json`:
-
-```json
-{ "plugin": ["session-hub"] }
-```
-
-Until the package is on npm, point it at this checkout:
-
-```json
-{ "plugin": ["file:///path/to/session-hub/integrations/opencode"] }
-```
+`/path/to/session-hub` is the directory you cloned into, a real path rather than a
+placeholder to paste verbatim.
 
 Each plugin is self-contained: Claude Code copies a plugin into its own cache, so
 on first run it vendors the hub into itself and then resolves through its own
