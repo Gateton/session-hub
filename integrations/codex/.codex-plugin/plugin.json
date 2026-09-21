@@ -1,0 +1,34 @@
+{
+  "name": "session-hub",
+  "version": "0.1.0",
+  "description": "Continue work you left in another coding agent. Find a session from Claude Code, OpenCode, Crush, JCode or Pi, see what importing it costs, and have it arrive with your next message.",
+  "author": {
+    "name": "Gateton"
+  },
+  "license": "MIT",
+  "keywords": [
+    "sessions",
+    "handoff",
+    "resume",
+    "context",
+    "mcp",
+    "cross-agent"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "session-hub",
+    "shortDescription": "Bring a conversation from another coding agent into this one",
+    "longDescription": "Find the session you left in Claude Code, OpenCode, Crush, JCode or Pi, check what importing it costs before you pay it, and let it arrive with your next message. session-hub also prints the verified command that reopens the session in the agent that owns it, and can search every agent's history on this machine for the work you are thinking of.",
+    "developerName": "Gateton",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Find the session where I set up the auth flow in Claude Code",
+      "Bring my Claude Code work on the parser into this conversation",
+      "Which session did I discuss the caching change in?"
+    ]
+  }
+}

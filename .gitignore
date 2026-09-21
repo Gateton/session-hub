@@ -3,3 +3,7 @@ node_modules/
 *.log
 .DS_Store
 .session-hub/
+
+# Created at runtime inside a plugin copy, never committed
+vendor/
+.sessionhub-vendor-attempted

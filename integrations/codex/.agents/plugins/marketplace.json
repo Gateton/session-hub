@@ -1,0 +1,20 @@
+{
+  "name": "session-hub-local",
+  "interface": {
+    "displayName": "session-hub (this checkout)"
+  },
+  "plugins": [
+    {
+      "name": "session-hub",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

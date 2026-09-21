@@ -62,30 +62,57 @@ node ~/session-hub/bin/sessionhub.mjs setup      # record where the hub lives
 export PATH="$HOME/session-hub/bin:$PATH"        # optional, for the bare command
 ```
 
-Then install the integration for the agent you use:
+Then install the integration for the agent you use.
 
-**Claude Code**
+### Claude Code
 
 ```text
-/plugin marketplace add <path or owner/repo>
+/plugin marketplace add /path/to/session-hub
 /plugin install session-hub@session-hub
 ```
 
-**Codex**
+Working on the plugin itself? `claude --plugin-dir /path/to/session-hub/integrations/claude`
+loads it without installing anything.
+
+### Codex
 
 ```bash
-codex plugin marketplace add <path or git url>
+codex plugin marketplace add /path/to/session-hub
 codex plugin add session-hub@session-hub
 ```
 
-**OpenCode** — add one entry to `opencode.json`:
+Codex asks you to trust the plugin's hooks once, in `/hooks`. Until you do, the
+tools and the skill work but a picked session is not delivered automatically.
+
+### OpenCode
+
+Add one entry to `opencode.json`:
 
 ```json
 { "plugin": ["session-hub"] }
 ```
 
-Each plugin is self-contained (it vendors what it needs on first run), so a
-harness that copies plugins into its own cache still works.
+Until the package is on npm, point it at this checkout:
+
+```json
+{ "plugin": ["file:///path/to/session-hub/integrations/opencode"] }
+```
+
+Each plugin is self-contained: Claude Code copies a plugin into its own cache, so
+on first run it vendors the hub into itself and then resolves through its own
+copy. Nothing else needs to be installed.
+
+### What has actually been verified
+
+Claims here are tied to observed runs, not to what the docs imply:
+
+| Harness | Verified here |
+|---|---|
+| Core, CLI, MCP | 80 checks green, against the real stores on this machine |
+| Claude Code | `claude plugin validate` passes (plugin, `--strict`, marketplace, skills); the hook emits the picked session as `additionalContext` once and nothing afterwards; the plugin's MCP server answers `initialize` and `tools/list`; a copied plugin vendors itself once and resolves through its own copy with no hub elsewhere |
+| Codex | `codex plugin marketplace add` + `plugin add` install from this checkout; `codex mcp list` resolves the `hub` server from the plugin cache; the hook delivers the picked session once; a live `codex exec` turn called `hub.search` and quoted the injected block verbatim |
+| OpenCode | See `integrations/opencode/README.md` for what was and was not exercised |
+| Claude Code, live turn | **Not verified**: this machine's Claude Code cannot authenticate headlessly (`OAuth session expired`), so the interactive flow is the one thing left to a human |
 
 ## Commands
 

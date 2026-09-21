@@ -22,6 +22,10 @@
     "core",
     "mcp",
     "integrations",
+    ".claude-plugin",
+    ".agents",
+    "tools",
+    "test",
     "README.md",
     "LICENSE"
   ],

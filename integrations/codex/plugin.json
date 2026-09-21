@@ -1,0 +1,18 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "session-hub",
+  "version": "0.1.0",
+  "description": "Continue work you left in another coding agent. Find a session from Claude Code, OpenCode, Crush, JCode or Pi, see what importing it costs, and have it arrive with your next message.",
+  "author": {
+    "name": "Gateton"
+  },
+  "license": "MIT",
+  "keywords": [
+    "sessions",
+    "handoff",
+    "resume",
+    "context",
+    "mcp",
+    "cross-agent"
+  ]
+}
