@@ -1,0 +1,3 @@
+# Python bytecode from importing the renderers directly
+__pycache__/
+*.pyc
