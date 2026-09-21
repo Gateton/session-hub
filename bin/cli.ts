@@ -47,6 +47,7 @@ Usage:
 
 Options:
   --harness <id>   Filter by harness: ${HARNESS_ORDER.join(", ")}
+  --dir <path>     With here: the project directory (default: the current one)
   --repo <text>    Filter by repo or project path
   --file <text>    Filter by a touched file path
   --limit <n>      Maximum rows (default 25 for lists, 300 for search)
