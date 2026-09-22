@@ -257,14 +257,48 @@ tail. The cost is printed every time, and `--chars` sets the ceiling.
 
 ## Using it
 
-Ask in plain language. The skill tells the agent when the hub is worth reaching for, and
-the agent decides between loading the context now or arming a pick for your next message.
-You can also be direct:
+Ask in plain language. The agent has the tools and a skill that tells it when the hub is
+worth reaching for, so you never have to name a command or a session id. You do not have
+to say "session-hub" either.
+
+### What you can ask
+
+| You want to | Say something like |
+| --- | --- |
+| Pick up work you left elsewhere | *"continue what I was doing in Codex"* · *"pick up where we left off"* · *"carry on with what I started in Claude Code"* |
+| Find a session you half-remember | *"the session where we fixed the retry loop"* · *"where did I deal with the timezone bug"* · *"that conversation about the migration"* |
+| See what you were doing here | *"what was I working on in this repo"* · *"what did I do yesterday"* · *"what was I doing before lunch"* |
+| Go back to the agent that owns it | *"open that in Claude Code"* · *"take me back to the OpenCode session"* · *"how do I resume that in Codex"* |
+| Read before you commit to it | *"show me that transcript first"* · *"what did we decide about the schema"* · *"list my recent sessions"* |
+| Check or cancel a pick | *"what is waiting to be imported"* · *"cancel the session I picked"* |
+
+The agent answers with what it found, and only imports a conversation when you pick one.
+
+### From the command line
+
+The same hub, without a model in the loop. Every one of these is read-only unless it says
+otherwise:
+
+```bash
+sessionhub here                               # what did I do in this project, every agent
+sessionhub list --harness codex --limit 5     # the newest Codex sessions
+sessionhub search "retry loop"                # titles and transcripts, across every agent
+sessionhub show claude-code:7c943ffa          # read it, free, no model involved
+sessionhub context claude-code:7c943ffa       # the budgeted package, ready to paste
+sessionhub native claude-code:7c943ffa        # the command that reopens it where it lives
+sessionhub pick codex:01a0c4f4 --note "retry bug"   # arm it for your next message
+sessionhub doctor                             # which agents were found, how many sessions
+```
+
+In OpenCode there is also `/hub`, which is the browser and the tools without leaving the
+chat:
 
 ```text
 /hub                                  # sessions of this project, every agent
 /hub payment retries                  # search every transcript
 /hub load codex:0191ab...             # import it, delivered with the next message
+/hub pending                          # what is waiting to be imported
+/hub reopen codex:0191ab...           # the command that reopens it in Codex
 ```
 
 ### Commands

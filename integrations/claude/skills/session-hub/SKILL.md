@@ -1,6 +1,6 @@
 ---
 name: session-hub
-description: Continue work the user did in another coding agent. Use when they refer to a conversation that is not in this transcript ("continue what I did in Codex", "the session where we fixed X", "what was I doing in this repo") or when they assume context you do not have. Finds sessions across Claude Code, Codex, OpenCode, Crush, JCode and Pi, brings one into this conversation, or gives the command that reopens it where it lives.
+description: Continue work the user did in another coding agent. Use when they refer to a conversation that is not in this transcript ("continue what I did in Codex", "the session where we fixed X", "what was I doing in this repo", "what did I do yesterday") or when they assume context you do not have. Finds sessions across Claude Code, Codex, OpenCode, Crush, JCode and Pi, brings one into this conversation, or gives the command that reopens it where it lives.
 when_to_use: The user mentions work done elsewhere, another agent by name, a session or conversation they cannot see here, or asks what they were doing in a project. Also useful when they ask you to resume something you have no context for.
 allowed-tools:
   - mcp__plugin_session-hub_hub__search
@@ -23,6 +23,8 @@ cost, and let them decide. Nothing is imported behind their back.
 - "Continue what I was doing in Codex / OpenCode / Crush / JCode / Pi."
 - "The session where we fixed the auth bug" / "that conversation about the parser".
 - "What was I doing in this repo?" when this transcript does not answer it.
+- "What did I do yesterday?" / "where did I leave the migration?" when the answer
+  is in another session rather than in this transcript.
 - The user assumes context you do not have and mentions another agent or another project.
 
 Not for this conversation: what happened here is already in front of you.

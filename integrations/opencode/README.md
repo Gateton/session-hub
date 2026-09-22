@@ -255,6 +255,16 @@ result. `/hub load` and the browser are the human paths: they record a pick, and
 the transcript arrives with the next message. Both are explicit, and both show
 the cost.
 
+You do not have to name a tool. Ask in plain language and the model picks the
+right one:
+
+| You want to | Say something like |
+| --- | --- |
+| Pick up work you left elsewhere | *"continue what I was doing in Codex"* · *"pick up where we left off"* |
+| Find a session you half-remember | *"the session where we fixed the parser"* · *"that Claude Code session about auth"* |
+| See what you were doing here | *"what was I doing here yesterday"* · *"where did I leave the migration"* |
+| Go back to the agent that owns it | *"open that in Codex"* · *"take me back to my Claude Code session"* |
+
 ## What you will see
 
 - **Browser opened by the keybind**: a full-screen list with a live preview of the
