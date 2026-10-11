@@ -10,6 +10,7 @@
 <a href="package.json"><img src="https://img.shields.io/badge/node-%E2%89%A522.5-1f8f4d?style=for-the-badge&labelColor=101418" alt="Node 22.5 or newer"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f5a623?style=for-the-badge&labelColor=101418" alt="License: MIT"></a>
 <a href="#the-mcp-server"><img src="https://img.shields.io/badge/MCP-3%20read--only%20tools-6f7cf7?style=for-the-badge&labelColor=101418" alt="MCP: three read-only tools"></a>
+<a href="https://m8ven.ai/mcp/gateton-session-hub-1yan6p?s=readme"><img src="https://m8ven.ai/badge/mcp/gateton-session-hub-1yan6p?v=f15161ab7260ae4351f8422ddb9f89d3" alt="M8ven Score"></a>
 </p>
 
 <p>
