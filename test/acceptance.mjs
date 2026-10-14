@@ -381,6 +381,78 @@ for (const session of [...parents.slice(0, 3), ...subagents.slice(0, 3)]) {
   );
 }
 
+process.stdout.write("\n3c. records the harness injects are not read as prompts\n");
+// Claude Code writes a Skill's loaded instructions, and the size note that
+// follows reading an image, as `type: "user"` records flagged `isMeta`. They
+// are not prompts: counted, previewed or indexed as user text they invent turns
+// nobody wrote and put harness noise into the search index. Reported by @chthub.
+const metaHome = tmpdir("meta-home");
+const metaHub = tmpdir("meta-index");
+const META_TOKEN = "zzmeta-token-9f3a";
+const META_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+const metaSlug = path.join(metaHome, ".claude", "projects", "-tmp-meta-demo");
+fs.mkdirSync(metaSlug, { recursive: true });
+fs.writeFileSync(
+  path.join(metaSlug, `${META_ID}.jsonl`),
+  [
+    {
+      type: "user",
+      isMeta: false,
+      sessionId: META_ID,
+      cwd: "/tmp/meta-demo",
+      timestamp: "2026-10-12T10:00:00.000Z",
+      message: { role: "user", content: "arreglame el login del panel" },
+    },
+    {
+      type: "user",
+      isMeta: true,
+      sourceToolUseID: "toolu_meta_1",
+      sessionId: META_ID,
+      cwd: "/tmp/meta-demo",
+      timestamp: "2026-10-12T10:00:01.000Z",
+      message: { role: "user", content: `[Image: original 3205x2408, displayed at 2000x1503.] ${META_TOKEN}` },
+    },
+    {
+      type: "assistant",
+      sessionId: META_ID,
+      cwd: "/tmp/meta-demo",
+      timestamp: "2026-10-12T10:00:05.000Z",
+      message: { role: "assistant", model: "claude-sonnet-4-6", content: [{ type: "text", text: "listo, ahi lo miro" }] },
+    },
+  ]
+    .map((line) => JSON.stringify(line))
+    .join("\n") + "\n",
+);
+const metaEnv = { HOME: metaHome };
+const metaList = runJson(["list", "--limit", "20"], { env: metaEnv, home: metaHub });
+const metaSession = (metaList.data ?? []).find((s) => s.harness === "claude-code");
+check("a session carrying a meta record is indexed", Boolean(metaSession), JSON.stringify(metaList.data ?? []).slice(0, 200));
+check(
+  "a meta record is not counted as a user prompt",
+  metaSession?.messageCount === 2,
+  `expected 2 (one prompt, one reply), got ${metaSession?.messageCount}`,
+);
+check(
+  "the preview is the real prompt, not the injected record",
+  metaSession?.preview === "arreglame el login del panel",
+  String(metaSession?.preview),
+);
+const metaSearch = runJson(["search", META_TOKEN, "--limit", "10"], { env: metaEnv, home: metaHub });
+check(
+  "the injected record is not in the search index",
+  (metaSearch.data ?? []).length === 0,
+  `search returned ${(metaSearch.data ?? []).length} row(s)`,
+);
+const metaShow = run(["show", metaSession?.uid ?? "", "--limit", "50"], { env: metaEnv, home: metaHub });
+check(
+  "the transcript keeps the prompt and the reply",
+  metaShow.stdout.includes("arreglame el login del panel") && metaShow.stdout.includes("listo, ahi lo miro"),
+  metaShow.stdout.slice(0, 200),
+);
+check("the transcript does not show the injected record", !metaShow.stdout.includes(META_TOKEN));
+fs.rmSync(metaHome, { recursive: true, force: true });
+fs.rmSync(metaHub, { recursive: true, force: true });
+
 process.stdout.write("\n4. the explicit pick and delivery flow\n");
 if (target) {
   const pick = runJson(["pick", target.uid, "--chars", "3000"], { env });

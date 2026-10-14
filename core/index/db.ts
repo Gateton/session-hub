@@ -13,6 +13,8 @@ import type { ExternalSession, HarnessId, SessionDetail } from "../types.ts";
 import { exec, openIndexDb, openIndexDbReadOnly, type ReadOnlyDb } from "../sqlite.ts";
 
 export const SCHEMA_VERSION = "1";
+/** Bump when metadata parsing changes; stale fingerprints never bypass parsing. */
+export const PARSER_VERSION = "2";
 
 export interface IndexedSessionRow {
   uid: string;
@@ -110,6 +112,18 @@ export async function openIndex(dbPath: string): Promise<IndexHandle | null> {
       exec(writable, `INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)`, [
         SCHEMA_VERSION,
       ]);
+      // A change in how sessions are parsed must not hide behind the
+      // unchanged-file shortcut: fingerprints recorded by an older parser are
+      // dropped, so every source is read again on the next scan.
+      const storedParser = writable.get<{ value: string }>(
+        "SELECT value FROM meta WHERE key = 'parser_version'",
+      )?.value;
+      if (storedParser !== PARSER_VERSION) {
+        exec(writable, "DELETE FROM sources");
+        exec(writable, `INSERT OR REPLACE INTO meta (key, value) VALUES ('parser_version', ?)`, [
+          PARSER_VERSION,
+        ]);
+      }
       // Drop any FTS rows whose session no longer exists. REPLACE on the sessions
       // table allocates a fresh rowid, so orphans accumulate without this sweep.
       exec(writable, "DELETE FROM search WHERE uid NOT IN (SELECT uid FROM sessions)");

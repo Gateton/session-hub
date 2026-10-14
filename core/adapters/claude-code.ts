@@ -194,6 +194,13 @@ export class ClaudeCodeAdapter implements SessionAdapter {
 
       if (typeof msg.model === "string" && !model) model = msg.model;
 
+      // `isMeta` user records are companions the harness injects for a tool call,
+      // not prompts: a Skill's loaded instructions (`sourceToolUseID` names the
+      // call) or the size note after reading an image. Counted, previewed or
+      // indexed as user text they invent turns nobody wrote and put harness
+      // noise in the search index. Reported by @chthub.
+      if (e.isMeta === true && role === "user") continue;
+
       let isToolResultCarrier = false;
       if (Array.isArray(content)) {
         for (const block of content) {
